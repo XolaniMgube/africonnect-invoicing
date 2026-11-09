@@ -1,6 +1,7 @@
 import type { Business } from "./types";
 
-const PREFIX = /^[A-Za-z0-9][A-Za-z0-9-]{0,11}$/;
+/** Empty (plain numbers such as 0001) or 1–12 letters, numbers and hyphens. */
+const PREFIX = /^([A-Za-z0-9][A-Za-z0-9-]{0,11})?$/;
 
 /** Business-profile rules shared by the settings form and the repository. */
 export function validateBusiness(business: Business): string[] {
@@ -14,11 +15,12 @@ export function validateBusiness(business: Business): string[] {
   ])
     if (!PREFIX.test(prefix))
       errors.push(
-        `${label}: use 1–12 letters, numbers or hyphens (for example GZ-INV).`,
+        `${label}: leave it empty, or use 1–12 letters, numbers or hyphens (for example GZ-INV).`,
       );
   if (
+    business.invoicePrefix &&
     business.invoicePrefix.trim().toUpperCase() ===
-    business.quotationPrefix.trim().toUpperCase()
+      business.quotationPrefix.trim().toUpperCase()
   )
     errors.push("Use different invoice and quotation prefixes.");
   for (const [label, days] of [

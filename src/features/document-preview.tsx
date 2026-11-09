@@ -1,5 +1,6 @@
 import type { BusinessDocument } from "@/domain/types";
 import { calculate, dateLabel, money } from "@/domain/documents";
+import Image from "next/image";
 import { BusinessMark } from "@/components/ui";
 
 /**
@@ -26,7 +27,19 @@ export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
       )}
       <div className="paper-heading">
         <div>
-          <BusinessMark business={issuer} />
+          {issuer.logo ? (
+            // Natural proportions, up to 130 px each way (PDF: 120 pt).
+            <Image
+              className="paper-issuer-logo"
+              src={issuer.logo}
+              alt={`${issuer.name} logo`}
+              width={130}
+              height={130}
+              unoptimized
+            />
+          ) : (
+            <BusinessMark business={issuer} />
+          )}
           <h2>{issuer.name}</h2>
           <p className="preserve-lines">{issuer.address}</p>
           <p>{[issuer.email, issuer.phone].filter(Boolean).join("  |  ")}</p>
@@ -64,10 +77,6 @@ export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
           <dl className="paper-details">
             <dt>{invoice ? "Invoice date" : "Quotation date"}</dt>
             <dd>{dateLabel(doc.date)}</dd>
-            <dt>{invoice ? "Payment due" : "Valid until"}</dt>
-            <dd>
-              <b>{dateLabel(doc.endDate)}</b>
-            </dd>
             {doc.sourceQuotationNumber && (
               <>
                 <dt>Quotation ref.</dt>

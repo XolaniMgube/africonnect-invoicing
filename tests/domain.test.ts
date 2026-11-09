@@ -6,6 +6,8 @@ import {
   calculate,
   clone,
   convertQuotation,
+  endDateFor,
+  nextNumber,
   saveDocument,
   scoped,
   validateDocument,
@@ -29,7 +31,12 @@ import {
   rowsToDatabase,
 } from "../src/data/rows";
 import { merge } from "../src/data/store";
-import { databaseMessage, signInMessage, OFFLINE } from "../src/data/errors";
+import {
+  databaseMessage,
+  signInMessage,
+  storageMessage,
+  OFFLINE,
+} from "../src/data/errors";
 import type { LineItem } from "../src/domain/types";
 const item = (price: number, quantity = 1): LineItem => ({
   id: "line",
@@ -120,8 +127,32 @@ test("issuing snapshots all identities and prices; later profile, customer and i
   );
   assert.throws(
     () => saveDocument(db, { ...issued, notes: "overwritten" }),
-    /read-only/,
+    /cannot go back to being a draft/,
   );
+});
+test("issued invoices and quotations can be edited in place, but not returned to draft", () => {
+  let db = createFixtures();
+  for (const kind of ["invoice", "quotation"] as const) {
+    const doc = clone(
+      db.documents.find((d) => d.kind === kind && d.status === "issued")!,
+    );
+    doc.lines = [{ ...doc.lines[0], quantity: 2, price: 50 }];
+    db = saveDocument(db, doc, true);
+    const edited = db.documents.find((d) => d.id === doc.id)!;
+    assert.equal(edited.number, doc.number);
+    assert.equal(edited.status, "issued");
+    assert.equal(edited.totals.subtotal, 100);
+    assert.equal(
+      db.documents.filter(
+        (d) => d.businessId === doc.businessId && d.number === doc.number,
+      ).length,
+      1,
+    );
+    assert.throws(
+      () => saveDocument(db, { ...edited, notes: "changed" }),
+      /cannot go back to being a draft/,
+    );
+  }
 });
 test("quoted identities survive conversion and issue; duplicate conversion opens the same invoice", () => {
   const db = createFixtures();
@@ -350,5 +381,60 @@ test("database and sign-in failures become messages an employee can act on", () 
   assert.match(
     signInMessage({ name: "AuthRetryableFetchError", status: 0 }),
     /internet connection/,
+  );
+});
+
+test("a logo the app allows but storage refuses says the storage limit needs raising", () => {
+  const tooLarge = { statusCode: "413", message: "Payload too large" };
+  assert.match(
+    storageMessage(tooLarge, 732_800),
+    /storage limit hasn’t been raised/,
+  );
+  assert.match(storageMessage(tooLarge, 4 * 1024 * 1024), /smaller than 3 MB/);
+  assert.match(storageMessage(tooLarge), /smaller than 3 MB/);
+});
+
+test("the hidden due / expiry date follows the document date and never blocks a save", () => {
+  const business = { paymentDays: 30, validityDays: 14 };
+  assert.equal(endDateFor("2026-11-08", business, "invoice"), "2026-12-08");
+  assert.equal(endDateFor("2026-12-25", business, "quotation"), "2027-01-08");
+  assert.equal(endDateFor("", business, "invoice"), "");
+  const doc = clone(createFixtures().documents[0]);
+  doc.date = "2027-03-01";
+  doc.endDate = endDateFor(doc.date, business, doc.kind);
+  assert.ok(!validateDocument(doc).some((e) => /date/i.test(e)));
+});
+
+test("document numbers: chosen numbers are kept, later ones continue from them, prefixes may be empty", () => {
+  let db = createFixtures();
+  const green = db.businesses.find((b) => b.id === "green")!;
+  assert.equal(nextNumber(db.documents, green, "invoice"), "GG-INV-0004");
+  // A chosen number is kept, and the next suggestion continues from it.
+  const draft = blankDocument(green, "invoice", db.customers[2]);
+  draft.lines = [{ ...db.documents[0].lines[0] }];
+  db = saveDocument(db, { ...draft, number: " 0123 " });
+  assert.equal(db.documents.find((d) => d.id === draft.id)!.number, "0123");
+  assert.equal(nextNumber(db.documents, green, "invoice"), "GG-INV-0124");
+  // The same number cannot be used twice by one business for one type.
+  const copy = { ...draft, id: crypto.randomUUID(), number: "0123" };
+  assert.throws(() => saveDocument(db, copy), /already used/);
+  // An empty number keeps an existing document's number.
+  db = saveDocument(db, { ...draft, number: "", notes: "Edited" });
+  assert.equal(db.documents.find((d) => d.id === draft.id)!.number, "0123");
+  // Without a prefix the number is just the digits; padding follows the
+  // highest number, and grows when it has to.
+  const plain = { ...green, invoicePrefix: "", quotationPrefix: "" };
+  assert.deepEqual(validateBusiness(plain), []);
+  assert.equal(nextNumber(db.documents, plain, "invoice"), "0124");
+  assert.equal(nextNumber([], plain, "quotation"), "0001");
+  const nines = [{ ...db.documents[0], businessId: "x", number: "999" }];
+  assert.equal(nextNumber(nines, { ...plain, id: "x" }, "invoice"), "1000");
+  assert.match(
+    validateBusiness({
+      ...green,
+      invoicePrefix: "INV",
+      quotationPrefix: "inv",
+    }).join(" "),
+    /different invoice and quotation prefixes/,
   );
 });

@@ -83,7 +83,14 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 22,
   },
-  logo: { width: 48, height: 48, objectFit: "contain", marginBottom: 10 },
+  // Natural proportions, up to 120 pt each way; tall logos sit left.
+  logo: {
+    maxWidth: 120,
+    maxHeight: 120,
+    objectFit: "contain",
+    objectPositionX: 0,
+    marginBottom: 10,
+  },
   initials: {
     fontSize: 22,
     fontFamily: "Helvetica-Bold",
@@ -312,12 +319,6 @@ export function DocumentPDF({ doc }: { doc: BusinessDocument }) {
                 {invoice ? "Invoice date" : "Quotation date"}
               </Text>
               <Text>{dateLabel(doc.date)}</Text>
-            </View>
-            <View style={s.detailRow}>
-              <Text style={s.detailLabel}>
-                {invoice ? "Payment due" : "Valid until"}
-              </Text>
-              <Text style={s.bold}>{dateLabel(doc.endDate)}</Text>
             </View>
             {doc.sourceQuotationNumber && (
               <View style={s.detailRow}>

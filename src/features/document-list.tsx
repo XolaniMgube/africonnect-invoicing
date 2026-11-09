@@ -117,15 +117,9 @@ export function CreateDocument({
     </>
   );
 }
-export function DocumentList({
-  businessId,
-  initialKind = "invoice",
-}: {
-  businessId?: string;
-  initialKind?: BusinessDocument["kind"];
-}) {
+export function DocumentList({ businessId }: { businessId?: string }) {
   const { db } = useData();
-  const [kind, setKind] = useState(initialKind);
+  const [kind, setKind] = useState<BusinessDocument["kind"]>("invoice");
   const [query, setQuery] = useState("");
   const [business, setBusiness] = useState("");
   const [status, setStatus] = useState("");

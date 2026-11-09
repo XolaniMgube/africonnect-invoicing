@@ -642,7 +642,7 @@ fieldset {
 }
 .stats-grid {
   display: grid;
-  grid-template-columns: 1.35fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 15px;
   margin-bottom: 32px;
 }
@@ -1211,6 +1211,13 @@ tbody tr:last-child td {
   grid-template-columns: 1fr 1fr;
   gap: 0 20px;
 }
+.form-hint {
+  grid-column: 1 / -1;
+  margin: -6px 0 17px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #899480;
+}
 .info-note {
   display: flex;
   gap: 12px;
@@ -1462,14 +1469,6 @@ tbody tr:last-child td {
   width: 60px;
   height: 60px;
 }
-.business-overview h2 {
-  font-size: 25px;
-}
-.business-overview p {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 5px;
-}
 .workspace-shortcuts {
   display: flex;
   margin-left: auto;
@@ -1613,20 +1612,6 @@ tbody tr:last-child td {
 }
 .line-numbers .field {
   margin-bottom: 0;
-}
-.line-total {
-  text-align: right;
-  padding-top: 0;
-}
-.line-total > span {
-  display: block;
-  font-size: 10px;
-  color: #7e8a73;
-  margin-bottom: 15px;
-}
-.line-total > strong {
-  font-size: 13px;
-  white-space: nowrap;
 }
 .editor-summary {
   position: sticky;
@@ -1774,6 +1759,14 @@ tbody tr:last-child td {
   margin-bottom: 15px;
   width: 52px;
   height: 52px;
+}
+.paper-issuer-logo {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 130px;
+  max-height: 130px;
+  margin-bottom: 15px;
 }
 .paper-heading h2 {
   color: var(--document-accent);
@@ -2253,6 +2246,9 @@ tbody tr:last-child td {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .stats-grid > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
   .business-strip {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -2516,6 +2512,13 @@ tbody tr:last-child td {
   .issued-banner {
     flex-wrap: wrap;
   }
+  /* Text on its own row; the buttons share the next one. */
+  .issued-banner > div {
+    flex-basis: calc(100% - 34px);
+  }
+  .issued-banner .btn + .btn {
+    margin-left: 0;
+  }
   .issued-banner .btn {
     margin-left: 30px;
   }
@@ -2673,9 +2676,6 @@ tbody tr:last-child td {
     padding: 19px;
     flex-wrap: wrap;
     gap: 15px;
-  }
-  .business-overview h2 {
-    font-size: 22px;
   }
   .workspace-shortcuts {
     width: 100%;
@@ -3093,4 +3093,90 @@ th {
   .breadcrumb > a:nth-of-type(2) + svg {
     display: none;
   }
+}
+
+/* Searchable customer dropdown in the document editor */
+.picker-control {
+  position: relative;
+}
+.picker-control input {
+  padding-right: 40px;
+  cursor: pointer;
+}
+.picker-control input:focus {
+  cursor: text;
+}
+.picker-control input::placeholder {
+  color: #8a9580;
+}
+.picker-control input[aria-expanded="true"]::placeholder {
+  color: #52624d;
+}
+.picker-toggle {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: #52624d;
+  cursor: pointer;
+}
+.picker-toggle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.picker-list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #dce3d8;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(16, 45, 33, 0.14);
+}
+.picker-list li {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  min-width: 0;
+}
+.picker-list li strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.picker-list li small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.picker-list li.highlighted {
+  background: #eef4e6;
+}
+.picker-list li[aria-selected="true"] strong {
+  color: var(--green);
+}
+.picker-list li[aria-selected="true"] strong::after {
+  content: " ✓";
+}
+.picker-list .picker-empty {
+  cursor: default;
+  color: var(--muted);
+  font-size: 12px;
 }

@@ -30,9 +30,9 @@ import {
   useUnsavedChanges,
   hasVisibleUnsavedChanges,
 } from "@/components/unsaved";
+import { LOGO_MAX_BYTES } from "@/data/errors";
 import { validateBusiness } from "@/domain/businesses";
 import type { Business } from "@/domain/types";
-import { money } from "@/domain/documents";
 import { CreateDocument, DocumentList } from "./document-list";
 export const newBusiness = (): Business => ({
   id: crypto.randomUUID(),
@@ -241,6 +241,13 @@ export function BusinessForm({
   onSaved?: (business: Business) => void;
 }) {
   const { db, saveBusiness, uploadLogo, notify, backend } = useData();
+  // Supabase keeps a file per upload. The browser-only demo stores the image
+  // itself in local storage (about 5 MB in total) and copies it into every
+  // issued snapshot, so it stays small there.
+  const logoLimit =
+    backend === "supabase"
+      ? { bytes: LOGO_MAX_BYTES, label: "3 MB" }
+      : { bytes: 300 * 1024, label: "300 KB" };
   const [form, setForm] = useState<Business>(() =>
     initial ? structuredClone(initial) : newBusiness(),
   );
@@ -271,9 +278,12 @@ export function BusinessForm({
     if (!file) return;
     if (
       !["image/png", "image/jpeg"].includes(file.type) ||
-      file.size > 300 * 1024
+      file.size > logoLimit.bytes
     ) {
-      notify("Choose a PNG or JPEG logo smaller than 300 KB.", true);
+      notify(
+        `Choose a PNG or JPEG logo smaller than ${logoLimit.label}.`,
+        true,
+      );
       return;
     }
     setBusy(true);
@@ -345,7 +355,7 @@ export function BusinessForm({
                 onChange={(e) => void upload(e.target.files?.[0])}
               />
             </label>
-            <small>PNG or JPEG · up to 300 KB · 2,000 px max</small>
+            <small>PNG or JPEG · up to {logoLimit.label} · 2,000 px max</small>
           </div>
           {form.logo && (
             <Button
@@ -387,8 +397,14 @@ export function BusinessForm({
       <div className="form-section">
         <h3>Document preferences</h3>
         <div className="form-grid">
-          {text("invoicePrefix", "Invoice prefix", true)}
-          {text("quotationPrefix", "Quotation prefix", true)}
+          {text("invoicePrefix", "Invoice prefix")}
+          {text("quotationPrefix", "Quotation prefix")}
+          <p className="form-hint">
+            Leave a prefix empty if this business numbers its documents
+            without one (0001 instead of INV-0001). Each new document continues
+            from the highest number used so far, and can be changed while
+            editing it.
+          </p>
           <Field label="Default payment period (days)">
             <input
               type="number"
@@ -478,10 +494,6 @@ export function BusinessWorkspace() {
         </Link>
       </Empty>
     );
-  const issued = db.documents.filter(
-    (d) =>
-      d.businessId === b.id && d.kind === "invoice" && d.status === "issued",
-  );
   return (
     <>
       <PageHeading
@@ -503,10 +515,6 @@ export function BusinessWorkspace() {
       )}
       <div className="business-overview card">
         <BusinessMark business={b} />
-        <div>
-          <h2>{money(issued.reduce((sum, d) => sum + d.totals.total, 0))}</h2>
-          <p>Issued invoice value · {issued.length} invoices</p>
-        </div>
         <div className="workspace-shortcuts">
           <Link href={`/businesses/${b.id}/customers`}>
             <Users size={20} />

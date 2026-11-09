@@ -92,12 +92,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     ? db?.documents.find((d) => d.id === path.split("/")[2])
     : undefined;
   const close = () => setMobile(false);
-  const quotationsTab =
-    path === "/overview" && params.get("tab") === "quotation";
   const section = path.split("/")[3];
   const crumbs: Crumb[] = [{ label: "Workspace", href: "/overview" }];
-  if (path === "/overview")
-    crumbs.push({ label: quotationsTab ? "Quotations" : "Overview" });
+  if (path === "/overview") crumbs.push({ label: "Overview" });
   else if (path === "/help")
     crumbs.push({ label: local ? "Help & demo guide" : "Help" });
   else if (path.startsWith("/businesses") || openDoc) {
@@ -133,7 +130,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <nav aria-label="Main navigation">
         <NavLink
           href="/overview"
-          active={path === "/overview" && !quotationsTab}
+          active={path === "/overview"}
           onNavigate={close}
         >
           <LayoutDashboard size={19} />
@@ -149,14 +146,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span className="nav-count">
             {db?.businesses.filter((b) => !b.archived).length || 0}
           </span>
-        </NavLink>
-        <NavLink
-          href="/overview?tab=quotation"
-          active={quotationsTab}
-          onNavigate={close}
-        >
-          <FileText size={19} />
-          <span>Quotations</span>
         </NavLink>
         {business && (
           <>

@@ -81,8 +81,9 @@ function omit<T extends object, K extends keyof T>(
 }
 
 /** Columns the database assigns itself on insert. */
+/** An empty number asks the database for the next one (see the migrations). */
 const forInsert = (doc: BusinessDocument) =>
-  omit(documentToRow(doc), "number", "updated_at", "source_quotation_number");
+  omit(documentToRow(doc), "updated_at", "source_quotation_number");
 
 const PAGE = 1000;
 /** Supabase returns at most 1,000 rows per request, so read in pages. */
@@ -134,17 +135,22 @@ const signOutHere = () =>
     .auth.signOut({ scope: "local" })
     .catch(() => undefined);
 
-/** Explains why a draft update matched no row. */
-async function draftConflict(id: string): Promise<never> {
+/** Explains why an update to a draft or issued invoice matched no row. */
+async function draftConflict(
+  id: string,
+  opened: BusinessDocument["status"],
+): Promise<never> {
   const { data } = await supabase()
     .from("documents")
     .select("status")
     .eq("id", id)
     .maybeSingle();
   throw new Error(
-    data?.status === "issued"
-      ? "Another employee has issued this document, so it can no longer be edited. Refresh the page to see the issued version."
-      : "Another employee saved changes to this draft after you opened it. Refresh the page to see their version, then make your changes again.",
+    opened === "issued"
+      ? "Another employee changed this document after you opened it. Refresh the page to see their version, then make your changes again."
+      : data?.status === "issued"
+        ? "Another employee has issued this document, so it can no longer be edited as a draft. Refresh the page to see the issued version."
+        : "Another employee saved changes to this draft after you opened it. Refresh the page to see their version, then make your changes again.",
   );
 }
 
@@ -319,18 +325,19 @@ export function createSupabaseStore(): Store {
       const doc = found(saveDocument(db, input, issue).documents, input.id);
       const existing = db.documents.find((d) => d.id === input.id);
       if (!existing)
-        // The database assigns the next number for this business.
         return rowToDocument(
           await must(
             supabase()
               .from("documents")
-              .insert(forInsert(doc))
+              // Only a number the employee typed; otherwise the database
+              // assigns the next one, safely even if two are created at once.
+              .insert(forInsert({ ...doc, number: input.number.trim() }))
               .select()
               .single(),
           ),
         );
       // Only update the version this employee opened (not a newer one that
-      // arrived in the background), and only while it is still a draft.
+      // arrived in the background), in the status they opened it in.
       const row = await maybe<DocumentRow>(
         supabase()
           .from("documents")
@@ -344,12 +351,12 @@ export function createSupabaseStore(): Store {
             ),
           )
           .eq("id", doc.id)
-          .eq("status", "draft")
+          .eq("status", existing.status)
           .eq("updated_at", input.updatedAt)
           .select()
           .maybeSingle(),
       );
-      return row ? rowToDocument(row) : draftConflict(doc.id);
+      return row ? rowToDocument(row) : draftConflict(doc.id, existing.status);
     },
 
     async convertQuotation(db, quotationId) {
@@ -400,7 +407,7 @@ export function createSupabaseStore(): Store {
       } catch (e) {
         failure = e as Error;
       }
-      if (failure) throw new Error(storageMessage(failure));
+      if (failure) throw new Error(storageMessage(failure, file.size));
       return bucket.getPublicUrl(path).data.publicUrl;
     },
   };

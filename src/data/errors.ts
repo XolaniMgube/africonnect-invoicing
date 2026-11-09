@@ -32,7 +32,9 @@ export function databaseMessage(error: Failure): string {
     case "PGRST116": // .single() found no row
       return "This record is no longer available. Refresh the page and try again.";
     case "23505":
-      return "This conflicts with a record another employee just saved. Refresh the page and try again.";
+      return /documents_number_unique/.test(error.message ?? "")
+        ? "This number is already used by another document of this business. Choose a different number."
+        : "This conflicts with a record another employee just saved. Refresh the page and try again.";
     case "23503":
       return "A related record is missing. Refresh the page and try again.";
     case "23514":
@@ -60,13 +62,19 @@ export function signInMessage(error: Failure): string {
   return error.message || "Sign-in failed. Try again.";
 }
 
+/** Largest logo the app accepts with Supabase; the bucket limit must match. */
+export const LOGO_MAX_BYTES = 3 * 1024 * 1024;
+
 export function storageMessage(
   error: Failure & { statusCode?: string },
+  fileSize?: number,
 ): string {
   if (offline(error))
     return "Couldn’t upload the logo. Check your internet connection and try again.";
   if (error.statusCode === "413" || /size/i.test(error.message ?? ""))
-    return "This logo is too large. Choose a PNG or JPEG smaller than 300 KB.";
+    return fileSize !== undefined && fileSize <= LOGO_MAX_BYTES
+      ? "Logo storage refused this file as too large, although it is under the app’s 3 MB limit. The storage limit hasn’t been raised yet: ask an administrator to apply the larger-logo update in Supabase."
+      : "This logo is too large. Choose a PNG or JPEG smaller than 3 MB.";
   if (error.statusCode === "415" || /mime/i.test(error.message ?? ""))
     return "Choose a PNG or JPEG logo.";
   if (

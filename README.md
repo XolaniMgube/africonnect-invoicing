@@ -62,12 +62,12 @@ The browser talks to Supabase directly with the publishable key, which is public
 
 - Anonymous visitors can read nothing. Signed-in users who aren’t in `public.employees` can read and change nothing.
 - Nothing can be deleted through the API (no delete privilege or policy). Businesses and items are archived instead.
-- Invoice and quotation numbers are assigned by the database: one at a time per business and type, unique, never reused, ignoring any number a client sends. As before, a number is taken on the first save of a draft.
-- Issued documents can’t be changed or returned to draft. Issue time and issuing employee are recorded.
+- Invoice and quotation numbers are unique per business and type. An employee may type a number (for example to continue from 0123); otherwise the database assigns the next one, one at a time: one more than the highest number used, keeping its zero-padding, after the prefix. A number is taken on the first save of a draft and can be changed while the document is editable.
+- Issued invoices and quotations can be edited in place (same number, still issued; no revision history is kept) but can’t return to draft. An invoice converted from a quotation keeps what it copied when the quotation is edited later. The first issue time and issuing employee are recorded and kept through edits.
 - A quotation converts into at most one invoice, and only once it is issued. Two employees converting at the same moment end up on the same invoice.
 - Documents must use a customer of the same business; customers and items can’t move between businesses; archived businesses accept no new or changed customers, items or documents.
 - Business profile rules (required fields, prefixes, VAT number before charging VAT, day ranges, colour) and document totals (`total = subtotal + tax`) are checked again by the database.
-- Logos go to the public `business-logos` bucket (PNG/JPEG, 300 KB). Employees can upload; nobody can overwrite or delete. Each upload gets a new file name, so an issued document keeps the logo it was issued with.
+- Logos go to the public `business-logos` bucket (PNG/JPEG, 3 MB). Employees can upload; nobody can overwrite or delete. Each upload gets a new file name, so an issued document keeps the logo it was issued with.
 
 The app also guards against employees overwriting each other. Saving a draft only succeeds if nobody else saved it since it was opened; otherwise the employee is asked to refresh. Archive/restore is stored separately from profile edits.
 
@@ -86,12 +86,12 @@ Put the printed `API URL` and `Publishable` key in `.env.local`. Local sign-up i
 
 ## Employee workflow
 
-1. Sign in to see all businesses’ documents and calculated statistics. Issued invoice value excludes drafts and quotations; it is not money received.
-2. Search or filter invoices and quotations, or open a client-business workspace.
+1. Sign in to see all businesses’ documents and counts of businesses, documents and drafts.
+2. Open a client-business workspace to search or filter its invoices and quotations.
 3. Add a business from the overview or **Client businesses** (saving opens its workspace), or edit an existing profile, logo, banking details, tax and document defaults. Add that business’s customers and reference items/services.
 4. Create an invoice or quotation. Choose its customer (or add a new one without leaving the editor), dates and line items. Reference prices can be overridden without changing the catalogue. Add custom lines as needed.
 5. Save a draft, return to it later, preview it, or download a draft-marked PDF. Required data is validated for both saving and issuing.
-6. Confirm issuance to preserve the document’s issuer, logo, customer, prices, styling and calculated totals. Issued documents are read-only.
+6. Confirm issuance to preserve the document’s issuer, logo, customer, prices, styling and calculated totals. An issued invoice or quotation can be reopened with **Edit invoice** / **Edit quotation** and saved again under the same number, replacing the previous version.
 7. Convert an issued quotation into a separately numbered invoice draft. Review the invoice before issuing. Repeated conversion opens the existing linked invoice.
 8. Download a real A4 PDF. Short documents fit on one page; longer documents paginate with a running head and repeated table headings on continuation pages, and “Page X of Y” on every page. Drafts carry a “DRAFT · NOT ISSUED” label and a light watermark.
 
@@ -144,12 +144,12 @@ These apply to both modes unless marked _(browser-only)_.
 - _(browser-only)_ For recovery, preserve a copy of the raw storage value through browser developer tools before making changes. A developer can restore a known-good version-1 value. Clearing the key intentionally resets to fixtures, but loses locally saved work; it is never done automatically.
 - _(browser-only)_ Demo-session storage is separate from business data.
 - Relationships use stable IDs. Document URLs and React keys use internal IDs; display numbers may legitimately overlap between businesses.
-- Each business has independent invoice and quotation sequences. Numbers are reserved on the first successful save/issue. Prefix changes retain a monotonically increasing numeric suffix.
-- Each line’s `quantity × unit price` is rounded to cents. Integer line cents are summed; VAT is rounded once on that subtotal. The editor, records, preview, overview and PDF use the same calculation function.
-- Business profiles require a name, contact email and address; invoice and quotation prefixes must differ (1–12 letters, numbers or hyphens); payment and validity periods are whole days from 0 to 365.
+- Each business has independent invoice and quotation sequences. The editor suggests the next number (highest trailing number + 1, same zero-padding, 4 digits for the first; `PREFIX-0124`, or `0124` without a prefix) and accepts any other unused number of up to 40 characters; later documents continue from the highest. Prefix changes keep the numeric sequence.
+- Each line’s `quantity × unit price` is rounded to cents. Integer line cents are summed; VAT is rounded once on that subtotal. The editor, records, preview, business page and PDF use the same calculation function.
+- Business profiles require a name, contact email and address; invoice and quotation prefixes may be empty (plain numbers) or 1–12 letters, numbers or hyphens, and must differ when set; payment and validity periods are whole days from 0 to 365.
 - Tax is optional; a positive VAT rate requires an issuer VAT registration value, both on the business profile and on each document. Documents are labelled Invoice/Quotation, never automatically “Tax invoice”. This is a prototype, not accounting/tax compliance software.
 - Issuing deep-copies document identities. Later profile/catalogue edits do not modify issued documents. Converted drafts retain the quotation’s issuer and customer snapshots; explicitly changing the selected customer uses the new customer’s details. Payment dates/terms are regenerated for invoices, and quotation-specific notes are not blindly copied.
-- Logo uploads accept PNG/JPEG, at most 300 KB and 2,000 × 2,000 pixels. A visible preview confirms the chosen image. In browser-only mode the image itself is stored and copied into snapshots; with Supabase it is uploaded immediately and its permanent URL is stored and copied into snapshots.
+- Logo uploads accept PNG/JPEG up to 2,000 × 2,000 pixels: at most 3 MB with Supabase, and 300 KB in browser-only mode (where the image is kept in the browser’s small local storage). A visible preview confirms the chosen image. In browser-only mode the image itself is stored and copied into snapshots; with Supabase it is uploaded immediately and its permanent URL is stored and copied into snapshots.
 - With Supabase, a failed save leaves the form as it was, shows why (rule broken, connection lost, session expired, someone else changed it) and changes nothing on screen.
 
 ## Validation
@@ -161,7 +161,7 @@ npm test
 npm run build
 ```
 
-Thirteen unit tests (`npm test`) cover cent rounding, deterministic fixtures, business scoping, independent numbering, immutable snapshots, idempotent conversion, archiving, document and business-profile validation, storage failures, PDF description splitting, Supabase row mapping and conversion links, merging saved records, and error messages.
+Seventeen unit tests (`npm test`) cover cent rounding, deterministic fixtures, business scoping, independent numbering, immutable snapshots, idempotent conversion, archiving, document and business-profile validation, storage failures, PDF description splitting, Supabase row mapping and conversion links, merging saved records, error messages (including logo storage limits), the hidden due / expiry date, editing issued invoices in place, and chosen numbers, the next number and empty prefixes.
 
 Thirty-two database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
 
@@ -178,13 +178,13 @@ PLAYWRIGHT_BASE_URL=http://127.0.0.1:3100 npm run test:e2e
 
 The test configuration uses installed Chrome at `/opt/google/chrome/chrome`. Set `PLAYWRIGHT_CHROME_PATH` to another Chrome/Chromium executable when needed. `PLAYWRIGHT_BASE_URL` defaults to `http://127.0.0.1:3001`. Tests use isolated browser contexts and do not modify your normal browser’s records. Screenshots, downloaded PDFs and failure traces go to ignored `test-results/`.
 
-Seven browser workflows cover login/logout and route gating, overview filters, business creation/edit/archive/restore and the VAT-number rule, customer/catalogue creation and scoping, invoice drafting and refresh persistence, calculations, unsaved-change warnings (navigation and business switching), issuance, preserved snapshots, quotation creation/conversion, repeated-conversion prevention, an empty business with inline customer creation, a fresh editor after saving, short (1-page) and multipage PDF downloads, failed saves, corrupt storage, and no page overflow at desktop/tablet/phone widths (lists become cards on phones).
+Eight browser workflows cover login/logout and route gating, business document filters, business creation/edit/archive/restore and the VAT-number rule, customer/catalogue creation and scoping, invoice drafting and refresh persistence, calculations, unsaved-change warnings (navigation and business switching), issuance, preserved snapshots, editing an issued invoice under the same number (and cancelling an edit), quotation creation/conversion, repeated-conversion prevention, an empty business with inline customer creation, a fresh editor after saving, short (1-page) and multipage PDF downloads, failed saves, corrupt storage, and no page overflow at desktop/tablet/phone widths (lists become cards on phones).
 
 If a test run behaves strangely, make sure the server on the test port was started after the latest `npm run build`; an older `next start` process serves stale assets.
 
 ### Testing against Supabase
 
-`tests/supabase.spec.ts` runs only with `E2E_SUPABASE=1`, against a build that points at a **local or test** Supabase project, never production: it creates businesses and documents, which can’t be deleted. It covers sign-in refusals, logo upload to Storage, database-assigned numbering, issue and read-only state seen from a second session, a PDF with the embedded logo, simultaneous conversion by two employees, and the draft-overwrite guard. The default employee is `user@africonnectsolutions.co.za` / `User@2026` (override with `E2E_EMAIL` / `E2E_PASSWORD`). Set `E2E_OUTSIDER_EMAIL` / `E2E_OUTSIDER_PASSWORD` to a user who isn’t in `public.employees` to check that they are refused.
+`tests/supabase.spec.ts` runs only with `E2E_SUPABASE=1`, against a build that points at a **local or test** Supabase project, never production: it creates businesses and documents, which can’t be deleted. It covers sign-in refusals, logo upload to Storage, database-assigned numbering and continuing from a typed number, issue seen from a second session, editing an issued invoice and refusing a stale second editor’s overwrite, a PDF with the embedded logo, simultaneous conversion by two employees, and the draft-overwrite guard. The default employee is `user@africonnectsolutions.co.za` / `User@2026` (override with `E2E_EMAIL` / `E2E_PASSWORD`). Set `E2E_OUTSIDER_EMAIL` / `E2E_OUTSIDER_PASSWORD` to a user who isn’t in `public.employees` to check that they are refused.
 
 ```bash
 npm run db:start && npm run db:reset
@@ -202,7 +202,7 @@ The application adapts the supplied Africonnect POS screenshots into an invoicin
 
 ## Limitations
 
-- _(browser-only)_ Records live in one browser, for one user; there is no sync, collaboration, real access control or backup. Clearing site data removes saved records. Read-only issued documents are an app rule, not a security boundary against developer-tools edits.
+- _(browser-only)_ Records live in one browser, for one user; there is no sync, collaboration, real access control or backup. Clearing site data removes saved records. Rules such as unique numbers are app rules, not a security boundary against developer-tools edits.
 - _(Supabase)_ Changes made by other employees appear when you return to the tab after 30 seconds away or reload; there is no live updating. Last save wins for business, customer and item details (drafts are protected; see above).
 - _(Supabase)_ No password reset or invitation emails: an administrator sets and resets passwords in the dashboard. Hosted Supabase’s built-in email sender is rate-limited and not meant for production; configure SMTP before enabling self-service password reset.
 - _(Supabase)_ Logos are uploaded as soon as they’re chosen, so a logo picked in a form that is never saved remains in Storage. Logos are public to anyone with the link, by design.

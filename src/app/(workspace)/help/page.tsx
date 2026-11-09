@@ -28,7 +28,7 @@ export default function Page() {
             FileText,
             "03",
             "Create, review and issue",
-            "Save a draft while you work. Confirm the details before issuing: issued documents become read-only.",
+            "Save a draft while you work. Confirm the details before issuing. Issued invoices and quotations can still be edited; saving replaces them under the same number.",
           ],
           [
             Download,
@@ -88,9 +88,10 @@ export default function Page() {
             <p>
               Records are saved in Africonnect’s shared database, so every
               employee who signs in sees the same businesses, customers and
-              documents. Records are archived, never deleted. Issued documents
-              are locked by the database itself. Business logos can be opened by
-              anyone who has their link, because they are printed on documents.
+              documents. Records are archived, never deleted. Issued invoices
+              and quotations keep their number when edited, and can’t go back to
+              being drafts. Business logos can be opened by anyone who has their
+              link, because they are printed on documents.
             </p>
             <p>
               If you leave this tab and come back after a while, it reloads the

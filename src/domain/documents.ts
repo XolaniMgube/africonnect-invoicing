@@ -45,6 +45,26 @@ export function addDays(date: string, days: number) {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+/**
+ * The due (invoice) or expiry (quotation) date stored with a document. It is
+ * no longer edited or printed (the terms text says it instead), but the
+ * database requires one on or after the document date, so it follows the
+ * document date by the business's payment or validity period.
+ */
+export function endDateFor(
+  date: string,
+  business: Pick<Business, "paymentDays" | "validityDays">,
+  kind: BusinessDocument["kind"],
+) {
+  try {
+    return addDays(
+      date,
+      kind === "invoice" ? business.paymentDays : business.validityDays,
+    );
+  } catch {
+    return date; // Incomplete date: validation reports the date itself.
+  }
+}
 export function blankDocument(
   business: Business,
   kind: BusinessDocument["kind"],
@@ -89,18 +109,68 @@ export function blankDocument(
     updatedAt: new Date().toISOString(),
   };
 }
+/** Longest document number accepted (the database has the same limit). */
+export const NUMBER_MAX = 40;
+const trailingDigits = (number: string) => number.match(/(\d+)$/)?.[1];
+/**
+ * The number a new document gets unless the employee types another: one more
+ * than the highest number this business has used for this type, keeping that
+ * number's zero-padding (0123 → 0124; 4 digits when there is none yet), after
+ * the business's prefix and a hyphen (no prefix: just the digits). Numbers
+ * without trailing digits are ignored. `supabase/migrations` repeats this rule.
+ */
+export function nextNumber(
+  documents: BusinessDocument[],
+  business: Pick<Business, "id" | "invoicePrefix" | "quotationPrefix">,
+  kind: BusinessDocument["kind"],
+) {
+  let highest: string | undefined;
+  for (const d of documents) {
+    if (d.businessId !== business.id || d.kind !== kind) continue;
+    const digits = trailingDigits(d.number);
+    if (digits && (!highest || BigInt(digits) > BigInt(highest)))
+      highest = digits;
+  }
+  const next = String(BigInt(highest ?? "0") + BigInt(1));
+  const digits = next.padStart(highest?.length ?? 4, "0");
+  const prefix = (
+    kind === "invoice" ? business.invoicePrefix : business.quotationPrefix
+  ).trim();
+  return prefix ? `${prefix}-${digits}` : digits;
+}
+/** Why `doc.number` cannot be used, or "" when it can. */
+export function numberTaken(
+  documents: BusinessDocument[],
+  doc: Pick<BusinessDocument, "id" | "businessId" | "kind" | "number">,
+) {
+  const number = doc.number.trim();
+  const other = documents.find(
+    (d) =>
+      d.id !== doc.id &&
+      d.businessId === doc.businessId &&
+      d.kind === doc.kind &&
+      d.number === number,
+  );
+  return other
+    ? `${doc.kind === "invoice" ? "Invoice" : "Quotation"} number ${number} is already used by another ${doc.kind} of this business. Choose a different number.`
+    : "";
+}
 export function validateDocument(doc: BusinessDocument): string[] {
   const errors: string[] = [];
+  if (doc.number.trim().length > NUMBER_MAX)
+    errors.push(
+      `The ${doc.kind} number can have at most ${NUMBER_MAX} characters.`,
+    );
   const validDate = (s: string) =>
     /^\d{4}-\d{2}-\d{2}$/.test(s) &&
     !Number.isNaN(Date.parse(s)) &&
     new Date(s).toISOString().slice(0, 10) === s;
   if (!doc.customerId || !doc.snapshot.customer.name.trim())
     errors.push("Choose a customer.");
-  if (!validDate(doc.date) || !validDate(doc.endDate))
-    errors.push("Enter valid document and due / expiry dates.");
-  if (doc.endDate < doc.date)
-    errors.push("Due / expiry date cannot be before the document date.");
+  if (!validDate(doc.date)) errors.push(`Enter a valid ${doc.kind} date.`);
+  // Not shown or edited any more; the editor keeps it in step with the date.
+  else if (!validDate(doc.endDate) || doc.endDate < doc.date)
+    errors.push(`Choose the ${doc.kind} date again.`);
   if (
     !doc.snapshot.issuer.name.trim() ||
     !doc.snapshot.issuer.address.trim() ||
@@ -142,8 +212,9 @@ export function saveDocument(
 ): Database {
   const next = clone(db);
   const existing = next.documents.find((d) => d.id === input.id);
-  if (existing?.status === "issued")
-    throw new Error("Issued documents are read-only.");
+  // Issued documents can be edited in place (same number, still issued).
+  if (existing?.status === "issued" && !issue)
+    throw new Error("An issued document cannot go back to being a draft.");
   const business = next.businesses.find((b) => b.id === input.businessId);
   const customer = next.customers.find(
     (c) => c.id === input.customerId && c.businessId === input.businessId,
@@ -172,20 +243,14 @@ export function saveDocument(
     : { issuer: clone(business), customer: clone(customer) };
   const errors = validateDocument(doc);
   if (errors.length) throw new Error(errors.join("\n"));
-  if (!existing) {
-    const prefix =
-      doc.kind === "invoice"
-        ? business.invoicePrefix
-        : business.quotationPrefix;
-    const seq =
-      Math.max(
-        0,
-        ...next.documents
-          .filter((d) => d.businessId === business.id && d.kind === doc.kind)
-          .map((d) => Number(d.number.match(/(\d+)$/)?.[1]) || 0),
-      ) + 1;
-    doc.number = `${prefix}-${String(seq).padStart(4, "0")}`;
-  } else doc.number = existing.number;
+  // A number typed by the employee is kept; an empty one means "the next
+  // number" for a new document, or "unchanged" for an existing one.
+  doc.number =
+    doc.number.trim() ||
+    existing?.number ||
+    nextNumber(next.documents, business, doc.kind);
+  const taken = numberTaken(next.documents, doc);
+  if (taken) throw new Error(taken);
   doc.status = issue ? "issued" : "draft";
   doc.totals = calculate(doc.lines, doc.taxRate);
   doc.updatedAt = new Date().toISOString();

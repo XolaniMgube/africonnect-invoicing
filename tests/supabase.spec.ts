@@ -82,9 +82,13 @@ async function createBusiness(page: Page, name: string) {
 
 async function draft(page: Page, businessId: string, kind: string) {
   await page.goto(`/businesses/${businessId}/documents/new?kind=${kind}`);
-  await page
-    .getByRole("combobox", { name: "Customer", exact: true })
-    .selectOption({ label: "E2E Customer" });
+  const customer = page.getByRole("combobox", {
+    name: "Customer",
+    exact: true,
+  });
+  await customer.click();
+  await page.getByRole("option", { name: /E2E Customer/ }).click();
+  await expect(customer).toHaveValue("E2E Customer");
   await page.getByRole("button", { name: "From catalogue" }).click();
   await page.getByRole("button", { name: /E2E Service/ }).click();
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
@@ -119,7 +123,7 @@ test("sign-in refuses wrong passwords and non-employees; employees sign in and o
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("shared records: logo upload, numbering by the database, issue, read-only after reload, PDF", async ({
+test("shared records: logo upload, numbering by the database, issue, editing an issued invoice, PDF", async ({
   page,
   browser,
 }) => {
@@ -146,6 +150,27 @@ test("shared records: logo upload, numbering by the database, issue, read-only a
   ).toBeVisible();
   await expect(other.locator(".document-paper:visible")).toContainText(name);
 
+  // The issued invoice can be edited; it keeps its number and stays issued.
+  const quantity = (p: Page) =>
+    p.getByLabel("Quantity", { exact: true }).filter({ visible: true });
+  await page.getByRole("button", { name: "Edit invoice" }).click();
+  await quantity(page).fill("3");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("INV-0001 updated")).toBeVisible();
+  await expect(
+    page.getByText("Issued and preserved", { exact: true }),
+  ).toBeVisible();
+  // An employee still looking at the old version cannot overwrite the edit.
+  await other.getByRole("button", { name: "Edit invoice" }).click();
+  await quantity(other).fill("4");
+  await other.getByRole("button", { name: "Save changes" }).click();
+  await expect(other.locator(".toast.error")).toContainText(
+    "Another employee changed this document",
+  );
+  await other.reload();
+  await other.getByRole("button", { name: "Edit invoice" }).click();
+  await expect(quantity(other)).toHaveValue("3");
+
   const event = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PDF", exact: true }).click();
   const data = await fs.readFile((await (await event).path())!);
@@ -157,6 +182,26 @@ test("shared records: logo upload, numbering by the database, issue, read-only a
   await draft(page, businessId, "invoice");
   await expect(
     page.getByRole("heading", { name: "INV-0002", exact: true }),
+  ).toBeVisible();
+
+  // A typed number is kept, and the database continues from it.
+  await page.goto(`/businesses/${businessId}/documents/new?kind=invoice`);
+  const number = page
+    .getByLabel("Invoice number", { exact: true })
+    .filter({ visible: true });
+  await expect(number).toHaveValue("INV-0003");
+  await number.fill("0500");
+  await page.getByRole("combobox", { name: "Customer", exact: true }).click();
+  await page.getByRole("option", { name: /E2E Customer/ }).click();
+  await page.getByRole("button", { name: "From catalogue" }).click();
+  await page.getByRole("button", { name: /E2E Service/ }).click();
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "0500", exact: true }),
+  ).toBeVisible();
+  await draft(page, businessId, "invoice");
+  await expect(
+    page.getByRole("heading", { name: "INV-0501", exact: true }),
   ).toBeVisible();
 });
 

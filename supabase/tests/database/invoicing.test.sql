@@ -3,7 +3,7 @@
 -- that is rolled back, so no test data is left behind.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(32);
+select plan(39);
 
 -- People: one employee, one signed-in user who is not an employee.
 insert into auth.users (id, email) values
@@ -74,7 +74,7 @@ returns void language sql as $$
     'business_id', '10000000-0000-4000-8000-000000000001',
     'customer_id', '20000000-0000-4000-8000-000000000001',
     'kind', doc_kind,
-    'number', 'CLIENT-CHOSEN-999',
+    'number', '',
     'status', 'draft',
     'document_date', '2026-11-05',
     'end_date', '2026-12-05',
@@ -94,7 +94,7 @@ select is(
   array(select number from public.documents
         where business_id = '10000000-0000-4000-8000-000000000001' order by number),
   array['TB-INV-0001', 'TB-INV-0002', 'TB-QUO-0001'],
-  'the database numbers documents per business and type, ignoring client numbers');
+  'without a chosen number, the database numbers documents per business and type');
 select is(
   (select created_by from public.documents where id = '30000000-0000-4000-8000-000000000001'),
   '00000000-0000-4000-8000-000000000001'::uuid,
@@ -112,28 +112,32 @@ select throws_ok(
   $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000009', 'invoice', '{"total": 999}')$$,
   '23514', null, 'totals must add up');
 
--- Drafts can change; the number cannot.
-update public.documents set notes = 'Updated', number = 'HACKED'
+-- Drafts can change; an empty number keeps the current one.
+update public.documents set notes = 'Updated', number = ''
   where id = '30000000-0000-4000-8000-000000000001';
 select is(
   (select notes || ' ' || number from public.documents where id = '30000000-0000-4000-8000-000000000001'),
-  'Updated TB-INV-0001', 'drafts can be edited but keep their number');
+  'Updated TB-INV-0001', 'drafts can be edited; an empty number keeps the current one');
 
--- Issuing locks the document.
+-- Issuing records when and by whom; issued invoices can still be edited.
 update public.documents set status = 'issued'
   where id = '30000000-0000-4000-8000-000000000001';
 select ok(
   (select issued_at is not null and issued_by is not null
    from public.documents where id = '30000000-0000-4000-8000-000000000001'),
   'issuing records when and by whom');
-select throws_ok(
-  $$update public.documents set notes = 'Changed after issue'
-    where id = '30000000-0000-4000-8000-000000000001'$$,
-  'P0001', 'Issued documents are read-only.', 'issued documents are read-only');
+update public.documents set notes = 'Changed after issue'
+  where id = '30000000-0000-4000-8000-000000000001';
+select is(
+  (select notes || ' ' || number || ' ' || status
+   from public.documents where id = '30000000-0000-4000-8000-000000000001'),
+  'Changed after issue TB-INV-0001 issued',
+  'issued invoices can be edited and keep their number and status');
 select throws_ok(
   $$update public.documents set status = 'draft'
     where id = '30000000-0000-4000-8000-000000000001'$$,
-  'P0001', 'Issued documents are read-only.', 'issued documents cannot return to draft');
+  'P0001', 'An issued document cannot go back to being a draft.',
+  'issued invoices cannot return to draft');
 select throws_ok(
   $$delete from public.documents where id = '30000000-0000-4000-8000-000000000002'$$,
   '42501', null, 'documents cannot be deleted');
@@ -149,6 +153,10 @@ select throws_ok(
   'draft quotations cannot be converted');
 update public.documents set status = 'issued'
   where id = '30000000-0000-4000-8000-000000000003';
+select lives_ok(
+  $$update public.documents set notes = 'Changed after issue'
+    where id = '30000000-0000-4000-8000-000000000003'$$,
+  'issued quotations can be edited too');
 select lives_ok(
   $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000004', 'invoice',
       '{"source_quotation_id":"30000000-0000-4000-8000-000000000003","source_quotation_number":"FAKE"}')$$,
@@ -189,6 +197,29 @@ select lives_ok(
     values ('10000000-0000-4000-8000-000000000001', 'Welcome back')$$,
   'restored businesses accept records again');
 
+-- Chosen numbers, continuing from them, and businesses without prefixes.
+select lives_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000020', 'invoice', '{"number":" 0123 "}')$$,
+  'an employee can choose a document number');
+select is(
+  (select number from public.documents where id = '30000000-0000-4000-8000-000000000020'),
+  '0123', 'a chosen number is kept, without surrounding spaces');
+select pg_temp.new_doc('30000000-0000-4000-8000-000000000021', 'invoice');
+select is(
+  (select number from public.documents where id = '30000000-0000-4000-8000-000000000021'),
+  'TB-INV-0124', 'the next number continues from the highest one, keeping its zero-padding');
+select throws_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000022', 'invoice', '{"number":"0123"}')$$,
+  '23505', null, 'a number is used once per business and type');
+select lives_ok(
+  $$update public.businesses set invoice_prefix = '', quotation_prefix = ''
+    where id = '10000000-0000-4000-8000-000000000001'$$,
+  'invoice and quotation prefixes may be empty');
+select pg_temp.new_doc('30000000-0000-4000-8000-000000000023', 'invoice');
+select is(
+  (select number from public.documents where id = '30000000-0000-4000-8000-000000000023'),
+  '0125', 'without a prefix, a number is just the digits');
+
 reset role;
 
 -- ─── Logo storage ───
@@ -197,7 +228,7 @@ select is(
   true, 'the logo bucket is public so logos print on documents');
 select is(
   (select file_size_limit from storage.buckets where id = 'business-logos'),
-  307200::bigint, 'logos are limited to 300 KB');
+  3145728::bigint, 'logos are limited to 3 MB');
 
 select * from finish();
 rollback;

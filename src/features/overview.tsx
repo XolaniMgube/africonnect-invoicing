@@ -1,5 +1,4 @@
 "use client";
-import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Building2,
@@ -12,26 +11,15 @@ import {
 } from "lucide-react";
 import { useData } from "@/components/provider";
 import { BusinessMark, PageHeading, TextLink } from "@/components/ui";
-import { money, today, dateLabel } from "@/domain/documents";
-import { CreateDocument, DocumentList } from "./document-list";
+import { today, dateLabel } from "@/domain/documents";
+import { CreateDocument } from "./document-list";
 import { AddBusiness } from "./businesses";
 export function Overview() {
   const { db } = useData();
-  const params = useSearchParams();
   if (!db) return null;
   const active = db.businesses.filter((b) => !b.archived);
-  const issued = db.documents.filter(
-    (d) => d.kind === "invoice" && d.status === "issued",
-  );
   const drafts = db.documents.filter((d) => d.status === "draft");
   const cards = [
-    {
-      label: "Issued invoice value",
-      value: money(issued.reduce((n, d) => n + d.totals.total, 0)),
-      hint: `${issued.length} issued invoices · not payments received`,
-      Icon: FileCheck2,
-      cls: "green",
-    },
     {
       label: "Client businesses",
       value: active.length,
@@ -160,12 +148,6 @@ export function Overview() {
           </Link>
         ))}
       </div>
-      <DocumentList
-        key={params.get("tab") || "invoice"}
-        initialKind={
-          params.get("tab") === "quotation" ? "quotation" : "invoice"
-        }
-      />
     </>
   );
 }

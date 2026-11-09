@@ -11,6 +11,7 @@ import {
   Send,
   Download,
   LockKeyhole,
+  PencilLine,
   ArrowRight,
   Package,
   CheckCircle2,
@@ -35,7 +36,11 @@ import {
   blankDocument,
   calculate,
   clone,
+  endDateFor,
   money,
+  nextNumber,
+  NUMBER_MAX,
+  numberTaken,
   validateDocument,
 } from "@/domain/documents";
 import type {
@@ -44,8 +49,9 @@ import type {
   Customer,
   LineItem,
 } from "@/domain/types";
-import { units } from "@/domain/types";
+import { CustomerPicker } from "./customer-picker";
 import { DocumentPreview } from "./document-preview";
+import { LineAmounts } from "./line-amounts";
 import { RecordForm, blankCustomer } from "./records";
 export function NewDocument() {
   const { businessId } = useParams<{ businessId: string }>();
@@ -87,10 +93,10 @@ export function DocumentDetail() {
     return (
       <Empty
         title="Document not found"
-        description="Return to the overview and choose an existing document."
+        description="Open the client business and choose an existing document."
       >
-        <Link href="/overview" className="btn primary">
-          Back to overview
+        <Link href="/businesses" className="btn primary">
+          Client businesses
         </Link>
       </Empty>
     );
@@ -115,7 +121,6 @@ function Editor({
   const [issuing, setIssuing] = useState(false);
   const [catalogue, setCatalogue] = useState(false);
   const [query, setQuery] = useState("");
-  const [customerQuery, setCustomerQuery] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -126,8 +131,13 @@ function Editor({
     if (errors.length) errorRef.current?.focus();
   }, [errors]);
   const issued = doc.status === "issued";
-  const locked = issued || business.archived;
-  const dirty = !issued && JSON.stringify(doc) !== baseline;
+  // Issued invoices can be reopened and saved again under the same number.
+  const [editing, setEditing] = useState(false);
+  // Until the employee types a number, a new document gets the next one.
+  const [numberTyped, setNumberTyped] = useState(false);
+  const readOnly = issued && !editing;
+  const locked = readOnly || business.archived;
+  const dirty = !readOnly && JSON.stringify(doc) !== baseline;
   useUnsavedChanges(dirty);
   if (!db) return null;
   const customers = db.customers.filter((c) => c.businessId === business.id);
@@ -146,8 +156,13 @@ function Editor({
       ...d,
       lines: d.lines.map((l) => (l.id === id ? { ...l, ...partial } : l)),
     }));
-  const liveDoc =
-    issued || doc.sourceQuotationId
+  const suggested = nextNumber(db.documents, business, kind);
+  // What the number field shows, and what is saved ("" = the next number for
+  // a new document, or the current number for an existing one).
+  const numberField = numberTyped ? doc.number : doc.number || suggested;
+  const numberToSave = numberTyped || doc.number ? doc.number.trim() : "";
+  const liveDoc = {
+    ...(readOnly || doc.sourceQuotationId
       ? doc
       : {
           ...doc,
@@ -157,11 +172,22 @@ function Editor({
               customers.find((c) => c.id === doc.customerId) ||
               doc.snapshot.customer,
           },
-        };
+        }),
+    number: readOnly
+      ? doc.number
+      : numberField.trim() || initial?.number || suggested,
+  };
   const totals = calculate(doc.lines, doc.taxRate);
+  const title = kind === "invoice" ? "Invoice" : "Quotation";
+  const linkedInvoiceId = db.documents.find(
+    (d) => d.id === doc.id,
+  )?.linkedInvoiceId;
   async function save(issue = false) {
     if (saving) return;
-    const validation = validateDocument(liveDoc);
+    const toSave = { ...liveDoc, number: numberToSave };
+    const validation = validateDocument(toSave);
+    const taken = numberToSave && numberTaken(db!.documents, toSave);
+    if (taken) validation.push(taken);
     if (validation.length) {
       setErrors(validation);
       setIssuing(false);
@@ -170,11 +196,13 @@ function Editor({
     setSaving(true);
     const before = JSON.stringify(doc);
     const saved = await saveDocument(
-      liveDoc,
+      toSave,
       issue,
-      issue
-        ? `${kind === "invoice" ? "Invoice" : "Quotation"} issued. The document is now read-only.`
-        : "Draft saved.",
+      editing
+        ? `${title} ${liveDoc.number} updated. Download the PDF again to send the new version.`
+        : issue
+          ? `${title} issued.`
+          : "Draft saved.",
     );
     if (saved) {
       // Keep anything typed while the save was in flight.
@@ -186,6 +214,8 @@ function Editor({
       setBaseline(JSON.stringify(saved));
       setErrors([]);
       setIssuing(false);
+      setEditing(false);
+      setNumberTyped(false);
       if (!initial) router.replace(`/documents/${saved.id}`);
     }
     setSaving(false);
@@ -226,7 +256,9 @@ function Editor({
         title={doc.number || `New ${kind}`}
         description={
           issued
-            ? `Issued by ${doc.snapshot.issuer.name}. Preserved exactly as issued.`
+            ? editing
+              ? `Editing an issued ${kind} from ${doc.snapshot.issuer.name}. Saving replaces it under the same number.`
+              : `Issued by ${doc.snapshot.issuer.name}. Preserved exactly as issued.`
             : "Build a clear, professional document. Review it before issuing."
         }
       >
@@ -259,22 +291,29 @@ function Editor({
           </span>
         </div>
       )}
-      {issued ? (
+      {readOnly ? (
         <>
           <div className="issued-banner">
             <LockKeyhole size={20} />
             <div>
               <strong>Issued and preserved</strong>
               <p>
-                This document is read-only. Changes to business details,
-                customers or prices will not affect it.
+                Changes to business details, customers or prices elsewhere will
+                not affect it. To change this {kind}, edit it: saving replaces
+                it under the same number.
               </p>
             </div>
+            {!business.archived && (
+              <Button variant="secondary" onClick={() => setEditing(true)}>
+                <PencilLine size={16} />
+                Edit {kind}
+              </Button>
+            )}
             {kind === "quotation" &&
-              (db.documents.find((d) => d.id === doc.id)?.linkedInvoiceId ? (
+              (linkedInvoiceId ? (
                 <Link
                   className="btn primary"
-                  href={`/documents/${db.documents.find((d) => d.id === doc.id)!.linkedInvoiceId}`}
+                  href={`/documents/${linkedInvoiceId}`}
                 >
                   Open linked invoice
                   <ArrowRight size={16} />
@@ -295,6 +334,18 @@ function Editor({
           {business.archived && (
             <div className="info-note">
               Restore this business to edit or issue this draft.
+            </div>
+          )}
+          {editing && (
+            <div className="info-note">
+              <PencilLine size={19} />
+              <span>
+                You are editing issued {kind} {doc.number}. Saving replaces it
+                under the same number; anyone who already has the PDF keeps the
+                old version, so send them the new one.
+                {linkedInvoiceId &&
+                  " It has already been converted: the linked invoice keeps what it copied and is not changed."}
+              </span>
             </div>
           )}
           {errors.length > 0 && (
@@ -324,43 +375,20 @@ function Editor({
                 <fieldset disabled={locked}>
                   <div className="form-grid">
                     <div>
-                      <SearchBox
-                        value={customerQuery}
-                        onChange={setCustomerQuery}
-                        placeholder="Find a customer…"
+                      <CustomerPicker
+                        customers={customers}
+                        value={doc.customerId}
+                        onChange={(customerId) => {
+                          const c = customers.find((c) => c.id === customerId);
+                          set({
+                            customerId,
+                            snapshot: {
+                              ...doc.snapshot,
+                              customer: c ? clone(c) : doc.snapshot.customer,
+                            },
+                          });
+                        }}
                       />
-                      <Field label="Customer">
-                        <select
-                          value={doc.customerId}
-                          onChange={(e) => {
-                            const c = customers.find(
-                              (c) => c.id === e.target.value,
-                            );
-                            set({
-                              customerId: e.target.value,
-                              snapshot: {
-                                ...doc.snapshot,
-                                customer: c ? clone(c) : doc.snapshot.customer,
-                              },
-                            });
-                          }}
-                        >
-                          <option value="">Select a customer</option>
-                          {customers
-                            .filter(
-                              (c) =>
-                                c.id === doc.customerId ||
-                                `${c.name} ${c.email}`
-                                  .toLowerCase()
-                                  .includes(customerQuery.toLowerCase()),
-                            )
-                            .map((c) => (
-                              <option value={c.id} key={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                        </select>
-                      </Field>
                       {!customers.length && (
                         <p className="field-note">
                           {business.name} has no customers yet. Add the
@@ -400,20 +428,34 @@ function Editor({
                         type="date"
                         required
                         value={doc.date}
-                        onChange={(e) => set({ date: e.target.value })}
+                        onChange={(e) =>
+                          set({
+                            date: e.target.value,
+                            endDate: endDateFor(e.target.value, business, kind),
+                          })
+                        }
                       />
                     </Field>
                     <Field
                       label={
-                        kind === "invoice" ? "Payment due date" : "Valid until"
+                        kind === "invoice"
+                          ? "Invoice number"
+                          : "Quotation number"
+                      }
+                      hint={
+                        initial
+                          ? "Change it if this document needs a different number."
+                          : `The next number is ${suggested}. Type another to continue from an existing number; later documents follow on from it.`
                       }
                     >
                       <input
-                        type="date"
-                        required
-                        min={doc.date}
-                        value={doc.endDate}
-                        onChange={(e) => set({ endDate: e.target.value })}
+                        value={numberField}
+                        maxLength={NUMBER_MAX}
+                        placeholder={initial?.number || suggested}
+                        onChange={(e) => {
+                          setNumberTyped(true);
+                          set({ number: e.target.value });
+                        }}
                       />
                     </Field>
                   </div>
@@ -480,68 +522,25 @@ function Editor({
                           <Trash2 size={17} />
                         </button>
                       </div>
-                      <Field label="Description">
-                        <textarea
-                          rows={2}
-                          maxLength={10000}
-                          value={l.description}
-                          onChange={(e) =>
-                            line(l.id, { description: e.target.value })
-                          }
-                        />
-                      </Field>
-                      <div className="line-numbers">
-                        <Field label="Quantity">
-                          <input
-                            type="number"
-                            min="0.001"
-                            max="10000000"
-                            step="any"
-                            value={Number.isNaN(l.quantity) ? "" : l.quantity}
+                      {/* Descriptions are no longer added; a line that
+                          already has one (older drafts and conversions) keeps
+                          it editable so it is never printed unseen. */}
+                      {l.description && (
+                        <Field label="Description">
+                          <textarea
+                            rows={2}
+                            maxLength={10000}
+                            value={l.description}
                             onChange={(e) =>
-                              line(l.id, {
-                                quantity:
-                                  e.target.value === ""
-                                    ? NaN
-                                    : Number(e.target.value),
-                              })
+                              line(l.id, { description: e.target.value })
                             }
                           />
                         </Field>
-                        <Field label="Unit">
-                          <select
-                            value={l.unit}
-                            onChange={(e) =>
-                              line(l.id, { unit: e.target.value })
-                            }
-                          >
-                            {units.map((u) => (
-                              <option key={u}>{u}</option>
-                            ))}
-                          </select>
-                        </Field>
-                        <Field label="Unit price (R)">
-                          <input
-                            type="number"
-                            min="0"
-                            max="1000000000"
-                            step="0.01"
-                            value={Number.isNaN(l.price) ? "" : l.price}
-                            onChange={(e) =>
-                              line(l.id, {
-                                price:
-                                  e.target.value === ""
-                                    ? NaN
-                                    : Number(e.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                        <div className="line-total">
-                          <span>Line total</span>
-                          <strong>{money(calculate([l], 0).total)}</strong>
-                        </div>
-                      </div>
+                      )}
+                      <LineAmounts
+                        line={l}
+                        onChange={(partial) => line(l.id, partial)}
+                      />
                     </div>
                   ))}
                   <Button
@@ -621,33 +620,69 @@ function Editor({
                   </span>
                   <strong>{money(totals.total)}</strong>
                 </div>
-                <Button
-                  variant="secondary"
-                  disabled={locked || saving}
-                  onClick={() => save()}
-                >
-                  <Save size={17} />
-                  Save draft
-                </Button>
-                <Button
-                  disabled={locked || saving}
-                  onClick={() => {
-                    const e = validateDocument(liveDoc);
-                    setErrors(e);
-                    if (!e.length) setIssuing(true);
-                  }}
-                >
-                  <Send size={17} />
-                  Issue {kind}
-                </Button>
+                {editing ? (
+                  <>
+                    <Button
+                      variant="secondary"
+                      disabled={saving}
+                      onClick={() => {
+                        if (
+                          dirty &&
+                          !window.confirm(
+                            `Discard your changes to this ${kind}?`,
+                          )
+                        )
+                          return;
+                        setDoc(JSON.parse(baseline));
+                        setErrors([]);
+                        setEditing(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={locked || saving || !dirty}
+                      onClick={() => save(true)}
+                    >
+                      <Save size={17} />
+                      {saving ? "Saving…" : "Save changes"}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      disabled={locked || saving}
+                      onClick={() => save()}
+                    >
+                      <Save size={17} />
+                      Save draft
+                    </Button>
+                    <Button
+                      disabled={locked || saving}
+                      onClick={() => {
+                        const e = validateDocument(liveDoc);
+                        setErrors(e);
+                        if (!e.length) setIssuing(true);
+                      }}
+                    >
+                      <Send size={17} />
+                      Issue {kind}
+                    </Button>
+                  </>
+                )}
                 <small>
                   {dirty
                     ? "Unsaved changes"
-                    : initial
-                      ? "All changes saved"
-                      : "Not saved yet"}
+                    : editing
+                      ? "No changes yet"
+                      : initial
+                        ? "All changes saved"
+                        : "Not saved yet"}
                   <br />
-                  Issuing makes this document read-only.
+                  {editing
+                    ? `Saving replaces the issued ${kind}.`
+                    : `Issued ${kind}s can still be edited later.`}
                 </small>
               </section>
               <div className="editor-tip">
@@ -680,7 +715,7 @@ function Editor({
         open={issuing}
         onOpenChange={setIssuing}
         title={`Issue this ${kind}?`}
-        description="This saves a permanent snapshot of the business, customer, line items and totals. You will no longer be able to edit this document."
+        description={`This saves the business, customer, line items and totals as issued. You can still edit the ${kind} later; saving an edit replaces it under the same number.`}
       >
         <div className="issue-review">
           <span>{liveDoc.snapshot.customer.name}</span>
@@ -747,7 +782,7 @@ function Editor({
                       id: crypto.randomUUID(),
                       referenceId: item.id,
                       name: item.name,
-                      description: item.description,
+                      description: "",
                       unit: item.unit,
                       quantity: 1,
                       price: item.price,

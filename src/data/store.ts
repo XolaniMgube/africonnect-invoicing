@@ -71,21 +71,32 @@ const env = {
 export const supabaseConfig =
   env.url && env.key ? { url: env.url, key: env.key } : null;
 
+/** Set automatically on Vercel builds ("production", "preview", "development"). */
+const vercel = process.env.NEXT_PUBLIC_VERCEL_ENV;
+
 /**
  * `NEXT_PUBLIC_DATA_BACKEND` chooses explicitly. Without it, Supabase is used
- * whenever its URL and key are set. Production should set it to "supabase"
- * so a missing key shows an error instead of quietly using browser storage.
+ * whenever its URL and key are set, and always on Vercel, so a deployment
+ * built without the keys shows an error instead of quietly becoming the
+ * browser-only demo.
  */
 export const backend: Backend =
   env.backend === "local"
     ? "local"
-    : env.backend === "supabase" || supabaseConfig
+    : env.backend === "supabase" || supabaseConfig || vercel
       ? "supabase"
       : "local";
 
+const missing = [
+  !env.url && "NEXT_PUBLIC_SUPABASE_URL",
+  !env.key && "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+].filter(Boolean);
+
 export const configError =
   backend === "supabase" && !supabaseConfig
-    ? "Supabase is selected but NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is missing. Add both to .env.local and restart the app."
+    ? vercel
+      ? `This deployment was built without ${missing.join(" and ")}. In Vercel → Settings → Environment Variables, add ${missing.length > 1 ? "them" : "it"} for the ${vercel} environment, then redeploy (build cache off).`
+      : `Supabase is selected but ${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} missing. Add ${missing.length > 1 ? "both" : "it"} to .env.local and restart the app.`
     : "";
 
 /** Applies a saved record to the records on screen. */

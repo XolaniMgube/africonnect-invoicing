@@ -21,6 +21,17 @@ async function storage(page: Page) {
     JSON.parse(localStorage.getItem("africonnect-invoicing:v1") || "{}"),
   );
 }
+/** Opens the customer dropdown, searches it and picks the customer. */
+async function pickCustomer(page: Page, name: string) {
+  const customer = page.getByRole("combobox", {
+    name: "Customer",
+    exact: true,
+  });
+  await customer.click();
+  await customer.fill(name);
+  await page.getByRole("option", { name: new RegExp(name) }).click();
+  await expect(customer).toHaveValue(name);
+}
 test("login validation, protected direct routes, filters, session refresh and logout", async ({
   page,
 }) => {
@@ -47,16 +58,20 @@ test("login validation, protected direct routes, filters, session refresh and lo
   await expect(
     page.getByRole("heading", { name: "Workspace overview" }),
   ).toBeVisible();
-  await page.getByLabel("Filter by client business").selectOption("green");
+  // The overview has no document table; each business lists its own.
+  await expect(
+    page.getByRole("heading", { name: "All documents" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Workspace overview" }),
+  ).toBeVisible();
+  await page.goto("/businesses/green");
   await page.getByLabel("Filter by status").selectOption("issued");
   await expect(page.locator("tbody:visible tr")).toHaveCount(2);
   await expect(page.locator("tbody:visible")).not.toContainText("Glen Zamba");
   await page.getByRole("tab", { name: /Quotations/ }).click();
   await expect(page.locator("tbody:visible tr")).toHaveCount(1);
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Workspace overview" }),
-  ).toBeVisible();
   await page.getByRole("button", { name: "Log out" }).click();
   await expect(page).toHaveURL(/\/login/);
   await page.goto("/documents/glen-doc-0");
@@ -171,14 +186,24 @@ test("invoice draft, scoped selectors, calculations, persistence, unsaved warnin
   await page.getByRole("button", { name: "Create document" }).click();
   await page.getByLabel("Issuing client business").selectOption("glen");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page
-    .getByRole("combobox", { name: "Customer", exact: true })
-    .selectOption("glen-customer-0");
-  await expect(
-    page
-      .getByRole("combobox", { name: "Customer", exact: true })
-      .locator("option"),
-  ).toHaveCount(3);
+  // The customer dropdown lists this business's customers and searches them.
+  const customer = page.getByRole("combobox", {
+    name: "Customer",
+    exact: true,
+  });
+  await customer.click();
+  await expect(page.getByRole("option")).toHaveCount(2);
+  await customer.fill("eastwood");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await customer.fill("no such customer");
+  await expect(page.getByRole("option")).toHaveCount(0);
+  await expect(page.getByRole("listbox")).toContainText("No customers match");
+  await customer.fill("mahlangu");
+  await customer.press("Enter");
+  await expect(customer).toHaveValue("Mahlangu Property Group");
+  await expect(page.locator(".customer-summary:visible")).toContainText(
+    "Mahlangu Property Group",
+  );
   await page.getByRole("button", { name: "From catalogue" }).click();
   await expect(page.getByRole("dialog")).not.toContainText(
     "Garden maintenance",
@@ -186,6 +211,24 @@ test("invoice draft, scoped selectors, calculations, persistence, unsaved warnin
   await page.getByRole("button", { name: /Site preparation/ }).click();
   await page.getByLabel("Quantity", { exact: true }).fill("2");
   await page.getByLabel("Unit price (R)").fill("100.25");
+  await expect(page.locator(".summary-total:visible")).toContainText("230,58");
+  // Lines have no description box; the item total and unit price fill each other.
+  await expect(page.getByLabel("Description", { exact: true })).toHaveCount(0);
+  const unitPrice = page.getByLabel("Unit price (R)");
+  const itemTotal = page.getByLabel("Item total (R)");
+  await expect(itemTotal).toHaveValue("200.5");
+  await itemTotal.fill("301");
+  await expect(unitPrice).toHaveValue("150.5");
+  // The typed total stays fixed when the quantity changes, even when it
+  // does not divide into whole cents.
+  await page.getByLabel("Quantity", { exact: true }).fill("3");
+  await expect(unitPrice).toHaveValue("100.33");
+  await expect(itemTotal).toHaveValue("301");
+  await expect(page.locator(".summary-total:visible")).toContainText("346,15");
+  // Typing a unit price makes it the fixed one again.
+  await unitPrice.fill("100.25");
+  await page.getByLabel("Quantity", { exact: true }).fill("2");
+  await expect(itemTotal).toHaveValue("200.5");
   await expect(page.locator(".summary-total:visible")).toContainText("230,58");
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("link", { name: "Overview", exact: true }).click();
@@ -242,9 +285,7 @@ test("quotation creation, preview, issue, linked conversion and duplicate preven
 }) => {
   await login(page);
   await page.goto("/businesses/green/documents/new?kind=quotation");
-  await page
-    .getByRole("combobox", { name: "Customer", exact: true })
-    .selectOption("green-customer-0");
+  await pickCustomer(page, "Willow Ridge Estate");
   await page.getByRole("button", { name: "Add custom line" }).click();
   await page.getByLabel("Line 1 name").fill("Seasonal planting");
   await page.getByLabel("Unit price (R)").fill("500");
@@ -266,7 +307,7 @@ test("quotation creation, preview, issue, linked conversion and duplicate preven
   const quoteUrl = page.url();
   await page.getByRole("button", { name: "Convert to invoice" }).click();
   await expect(
-    page.getByRole("textbox", { name: "Payment due date", exact: true }),
+    page.getByLabel("Invoice date", { exact: true }).filter({ visible: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Created from quotation", { exact: false }).first(),
@@ -356,11 +397,104 @@ test("empty business: inline customer, business-switch warning and a fresh edito
     page.getByRole("combobox", { name: "Customer", exact: true }),
   ).toHaveValue("");
   await page.goto("/businesses/glen/documents/new?kind=invoice");
+  await page.getByRole("combobox", { name: "Customer", exact: true }).click();
+  await expect(page.getByRole("option")).toHaveCount(2);
+  await expect(page.getByRole("option", { name: /Lindiwe/ })).toHaveCount(0);
+});
+test("issued invoices and quotations can be edited and saved under the same number", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/documents/green-doc-0");
   await expect(
-    page
-      .getByRole("combobox", { name: "Customer", exact: true })
-      .locator("option", { hasText: "Lindiwe" }),
-  ).toHaveCount(0);
+    page.getByRole("heading", { name: "GG-INV-0001", exact: true }),
+  ).toBeVisible();
+  const quantity = page
+    .getByLabel("Quantity", { exact: true })
+    .filter({ visible: true })
+    .first();
+  await expect(quantity).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit invoice" }).click();
+  await quantity.fill("10");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByText("Issued and preserved", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "GG-INV-0001", exact: true }),
+  ).toBeVisible();
+  const saved = (await storage(page)).documents.filter(
+    (d: { businessId: string; number: string }) =>
+      d.businessId === "green" && d.number === "GG-INV-0001",
+  );
+  expect(saved).toHaveLength(1);
+  expect(saved[0].status).toBe("issued");
+  expect(saved[0].lines[0].quantity).toBe(10);
+  // Cancelling an edit discards it.
+  await page.getByRole("button", { name: "Edit invoice" }).click();
+  await quantity.fill("99");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Edit invoice" }),
+  ).toBeVisible();
+  const after = (await storage(page)).documents.find(
+    (d: { id: string }) => d.id === "green-doc-0",
+  );
+  expect(after.lines[0].quantity).toBe(10);
+  // Issued quotations can be edited the same way, beside "Convert to invoice".
+  await page.goto("/documents/green-doc-3");
+  await expect(
+    page.getByRole("button", { name: "Convert to invoice" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Edit quotation" }).click();
+  await quantity.fill("7");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText(/Quotation GG-QUO-0001 updated/)).toBeVisible();
+  const quote = (await storage(page)).documents.find(
+    (d: { id: string }) => d.id === "green-doc-3",
+  );
+  expect(quote.status).toBe("issued");
+  expect(quote.number).toBe("GG-QUO-0001");
+  expect(quote.lines[0].quantity).toBe(7);
+});
+test("businesses without prefixes, and invoices that continue from a chosen number", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/businesses/glen/settings");
+  await page.getByLabel("Invoice prefix").fill("");
+  await page.getByLabel("Quotation prefix").fill("");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+  await page.goto("/businesses/glen/documents/new?kind=invoice");
+  const number = page
+    .getByLabel("Invoice number", { exact: true })
+    .filter({ visible: true });
+  // Glen Zamba's invoices end at 0003; without a prefix the next is 0004.
+  await expect(number).toHaveValue("0004");
+  await number.fill("0123");
+  await pickCustomer(page, "Mahlangu Property Group");
+  await page.getByRole("button", { name: "Add custom line" }).click();
+  await page.getByLabel("Line 1 name").fill("Existing work");
+  await page.getByLabel("Unit price (R)").fill("100");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "0123", exact: true }),
+  ).toBeVisible();
+  // Another document cannot reuse the number; the next one follows on.
+  await page.goto("/businesses/glen/documents/new?kind=invoice");
+  await expect(number).toHaveValue("0124");
+  await number.fill("0123");
+  await pickCustomer(page, "Mahlangu Property Group");
+  await page.getByRole("button", { name: "Add custom line" }).click();
+  await page.getByLabel("Line 1 name").fill("Duplicate");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.locator(".form-error:visible")).toContainText(
+    "Invoice number 0123 is already used",
+  );
 });
 test("short and multipage PDF downloads contain real PDF data", async ({
   page,
