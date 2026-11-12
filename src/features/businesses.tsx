@@ -372,7 +372,7 @@ export function BusinessForm({
           {text("industry", "Industry")}
           {text("email", "Contact email", true, "email")}
           {text("phone", "Phone")}
-          {text("registration", "Registration information")}
+          {text("registration", "Business Registration Number")}
           {text("vat", "VAT registration number")}
         </div>
         <Field label="Business address">
@@ -400,21 +400,10 @@ export function BusinessForm({
           {text("invoicePrefix", "Invoice prefix")}
           {text("quotationPrefix", "Quotation prefix")}
           <p className="form-hint">
-            Leave a prefix empty if this business numbers its documents
-            without one (0001 instead of INV-0001). Each new document continues
-            from the highest number used so far, and can be changed while
-            editing it.
+            Leave a prefix empty if this business numbers its documents without
+            one (0001 instead of INV-0001). Each new document continues from the
+            highest issued number used so far. Drafts do not reserve numbers.
           </p>
-          <Field label="Default payment period (days)">
-            <input
-              type="number"
-              required
-              min="0"
-              max="365"
-              value={form.paymentDays}
-              onChange={(e) => update("paymentDays", Number(e.target.value))}
-            />
-          </Field>
           <Field label="Quotation validity (days)">
             <input
               type="number"

@@ -248,7 +248,7 @@ export function DocumentList({ businessId }: { businessId?: string }) {
                         <FileText size={17} />
                       </span>
                       <span>
-                        {doc.number}
+                        {doc.number || "Unnumbered draft"}
                         <small>
                           {doc.kind === "invoice" ? "Invoice" : "Quotation"}
                         </small>
@@ -287,7 +287,7 @@ export function DocumentList({ businessId }: { businessId?: string }) {
                     <Link
                       className="icon-btn"
                       href={`/documents/${doc.id}`}
-                      aria-label={`Open ${doc.number}`}
+                      aria-label={`Open ${doc.number || "Unnumbered draft"}`}
                     >
                       <ChevronRight size={18} />
                     </Link>

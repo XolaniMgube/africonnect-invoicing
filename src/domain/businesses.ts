@@ -35,10 +35,6 @@ export function validateBusiness(business: Business): string[] {
     business.taxRate > 100
   )
     errors.push("Default VAT rate must be between 0 and 100.");
-  else if (business.taxRate > 0 && !business.vat.trim())
-    errors.push(
-      "Add the VAT registration number, or set the default VAT rate to 0 for a business that does not charge VAT.",
-    );
   if (!/^#[a-f\d]{6}$/i.test(business.accent))
     errors.push("Choose a valid document accent colour.");
   return errors;

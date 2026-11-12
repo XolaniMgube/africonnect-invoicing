@@ -3,7 +3,7 @@
 -- that is rolled back, so no test data is left behind.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(39);
+select plan(46);
 
 -- People: one employee, one signed-in user who is not an employee.
 insert into auth.users (id, email) values
@@ -47,10 +47,14 @@ select lives_ok(
     values ('10000000-0000-4000-8000-000000000001', 'Test Builders', 'hello@test.example', '1 Test Street', 'TB-INV', 'TB-QUO', 15, 'VAT-1'),
            ('10000000-0000-4000-8000-000000000002', 'Other Co', 'hi@other.example', '2 Other Street', 'OC-INV', 'OC-QUO', 0, '')$$,
   'employees can add businesses');
-select throws_ok(
+select lives_ok(
   $$insert into public.businesses (name, email, address, invoice_prefix, quotation_prefix, tax_rate)
     values ('No VAT number', 'a@b.c', 'Here', 'NV-INV', 'NV-QUO', 15)$$,
-  '23514', null, 'charging VAT requires a VAT number');
+  'a new business can charge VAT without a registration number');
+select lives_ok(
+  $$update public.businesses set vat = '', tax_rate = 15
+    where id = '10000000-0000-4000-8000-000000000001'$$,
+  'business settings allow clearing the VAT number while keeping a positive rate');
 select throws_ok(
   $$insert into public.businesses (name, email, address, invoice_prefix, quotation_prefix)
     values ('Same prefixes', 'a@b.c', 'Here', 'DOC', 'doc')$$,
@@ -79,7 +83,7 @@ returns void language sql as $$
     'document_date', '2026-11-05',
     'end_date', '2026-12-05',
     'terms', '', 'notes', '',
-    'tax_rate', 15,
+    'tax_rate', 15, 'discount_amount', 0,
     'lines', '[{"id":"l1","name":"Work","description":"","unit":"Item","quantity":1,"price":100}]'::jsonb,
     'snapshot', '{"issuer":{"id":"10000000-0000-4000-8000-000000000001"},"customer":{"id":"20000000-0000-4000-8000-000000000001"}}'::jsonb,
     'subtotal', 100, 'tax', 15, 'total', 115,
@@ -93,8 +97,8 @@ select pg_temp.new_doc('30000000-0000-4000-8000-000000000003', 'quotation');
 select is(
   array(select number from public.documents
         where business_id = '10000000-0000-4000-8000-000000000001' order by number),
-  array['TB-INV-0001', 'TB-INV-0002', 'TB-QUO-0001'],
-  'without a chosen number, the database numbers documents per business and type');
+  array['', '', ''],
+  'drafts do not reserve official numbers');
 select is(
   (select created_by from public.documents where id = '30000000-0000-4000-8000-000000000001'),
   '00000000-0000-4000-8000-000000000001'::uuid,
@@ -117,7 +121,7 @@ update public.documents set notes = 'Updated', number = ''
   where id = '30000000-0000-4000-8000-000000000001';
 select is(
   (select notes || ' ' || number from public.documents where id = '30000000-0000-4000-8000-000000000001'),
-  'Updated TB-INV-0001', 'drafts can be edited; an empty number keeps the current one');
+  'Updated ', 'drafts can be edited without receiving a number');
 
 -- Issuing records when and by whom; issued invoices can still be edited.
 update public.documents set status = 'issued'
@@ -126,17 +130,15 @@ select ok(
   (select issued_at is not null and issued_by is not null
    from public.documents where id = '30000000-0000-4000-8000-000000000001'),
   'issuing records when and by whom');
-update public.documents set notes = 'Changed after issue'
-  where id = '30000000-0000-4000-8000-000000000001';
-select is(
-  (select notes || ' ' || number || ' ' || status
-   from public.documents where id = '30000000-0000-4000-8000-000000000001'),
-  'Changed after issue TB-INV-0001 issued',
-  'issued invoices can be edited and keep their number and status');
+select throws_ok(
+  $$update public.documents set notes = 'Changed after issue'
+    where id = '30000000-0000-4000-8000-000000000001'$$,
+  'P0001', 'Issued documents are preserved. Create a draft revision to make changes.',
+  'issued invoices cannot be overwritten');
 select throws_ok(
   $$update public.documents set status = 'draft'
     where id = '30000000-0000-4000-8000-000000000001'$$,
-  'P0001', 'An issued document cannot go back to being a draft.',
+  'P0001', 'Issued documents are preserved. Create a draft revision to make changes.',
   'issued invoices cannot return to draft');
 select throws_ok(
   $$delete from public.documents where id = '30000000-0000-4000-8000-000000000002'$$,
@@ -153,10 +155,11 @@ select throws_ok(
   'draft quotations cannot be converted');
 update public.documents set status = 'issued'
   where id = '30000000-0000-4000-8000-000000000003';
-select lives_ok(
+select throws_ok(
   $$update public.documents set notes = 'Changed after issue'
     where id = '30000000-0000-4000-8000-000000000003'$$,
-  'issued quotations can be edited too');
+  'P0001', 'Issued documents are preserved. Create a draft revision to make changes.',
+  'issued quotations cannot be overwritten');
 select lives_ok(
   $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000004', 'invoice',
       '{"source_quotation_id":"30000000-0000-4000-8000-000000000003","source_quotation_number":"FAKE"}')$$,
@@ -197,28 +200,57 @@ select lives_ok(
     values ('10000000-0000-4000-8000-000000000001', 'Welcome back')$$,
   'restored businesses accept records again');
 
--- Chosen numbers, continuing from them, and businesses without prefixes.
+-- Revisions are separate drafts and only receive a number when issued.
 select lives_ok(
-  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000020', 'invoice', '{"number":" 0123 "}')$$,
-  'an employee can choose a document number');
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000020', 'invoice',
+    '{"revision_of_id":"30000000-0000-4000-8000-000000000001","number":"9999"}')$$,
+  'an issued invoice can have a draft revision');
 select is(
   (select number from public.documents where id = '30000000-0000-4000-8000-000000000020'),
-  '0123', 'a chosen number is kept, without surrounding spaces');
-select pg_temp.new_doc('30000000-0000-4000-8000-000000000021', 'invoice');
+  '', 'a revision draft has no official number even if a client supplies one');
+update public.documents set status = 'issued' where id = '30000000-0000-4000-8000-000000000020';
 select is(
-  (select number from public.documents where id = '30000000-0000-4000-8000-000000000021'),
-  'TB-INV-0124', 'the next number continues from the highest one, keeping its zero-padding');
+  (select number from public.documents where id = '30000000-0000-4000-8000-000000000020'),
+  'TB-INV-0002', 'issuing the revision assigns the next official number');
+select is(
+  (select notes || ' ' || number from public.documents where id = '30000000-0000-4000-8000-000000000001'),
+  'Updated TB-INV-0001', 'the original remains unchanged');
 select throws_ok(
-  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000022', 'invoice', '{"number":"0123"}')$$,
-  '23505', null, 'a number is used once per business and type');
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000021', 'quotation',
+    '{"revision_of_id":"30000000-0000-4000-8000-000000000001"}')$$,
+  'P0001', 'A revision must refer to an issued document of the same business and type.',
+  'a revision cannot change document type');
+select throws_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000021', 'invoice',
+    '{"revision_of_id":"30000000-0000-4000-8000-000000000002"}')$$,
+  'P0001', 'A revision must refer to an issued document of the same business and type.',
+  'a draft cannot be a revision origin');
 select lives_ok(
   $$update public.businesses set invoice_prefix = '', quotation_prefix = ''
     where id = '10000000-0000-4000-8000-000000000001'$$,
   'invoice and quotation prefixes may be empty');
-select pg_temp.new_doc('30000000-0000-4000-8000-000000000023', 'invoice');
+select pg_temp.new_doc('30000000-0000-4000-8000-000000000023', 'invoice', '{"status":"issued"}');
 select is(
   (select number from public.documents where id = '30000000-0000-4000-8000-000000000023'),
-  '0125', 'without a prefix, a number is just the digits');
+  '0003', 'without a prefix, an issued number is just the digits');
+
+-- Fixed discounts and the accounting identity are enforced for direct writes too.
+select lives_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000030', 'invoice',
+    '{"discount_amount":10,"tax":13.5,"total":103.5}')$$,
+  'a discounted invoice has balanced totals');
+select throws_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000031', 'quotation',
+    '{"discount_amount":101,"tax":0,"total":-1}')$$,
+  '23514', null, 'discount cannot exceed subtotal');
+select throws_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000032', 'invoice',
+    '{"discount_amount":-1,"tax":15,"total":116}')$$,
+  '23514', null, 'discount cannot be negative');
+select throws_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000033', 'invoice',
+    '{"discount_amount":10,"tax":13.5,"total":115}')$$,
+  '23514', null, 'total must subtract the discount');
 
 reset role;
 

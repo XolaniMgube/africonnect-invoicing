@@ -70,11 +70,13 @@ export type DocumentRow = {
   terms: string;
   notes: string;
   tax_rate: number;
+  discount_amount: number;
   lines: BusinessDocument["lines"];
   snapshot: BusinessDocument["snapshot"];
   subtotal: number;
   tax: number;
   total: number;
+  revision_of_id: string | null;
   source_quotation_id: string | null;
   source_quotation_number: string | null;
   updated_at: string;
@@ -190,11 +192,13 @@ export const documentToRow = (d: BusinessDocument): DocumentRow => ({
   terms: d.terms,
   notes: d.notes,
   tax_rate: d.taxRate,
+  discount_amount: d.discountAmount ?? 0,
   lines: d.lines,
   snapshot: d.snapshot,
   subtotal: d.totals.subtotal,
   tax: d.totals.tax,
   total: d.totals.total,
+  revision_of_id: d.revisionOfId ?? null,
   source_quotation_id: d.sourceQuotationId ?? null,
   source_quotation_number: d.sourceQuotationNumber ?? null,
   updated_at: d.updatedAt,
@@ -213,6 +217,7 @@ export function rowToDocument(r: DocumentRow): BusinessDocument {
     terms: s(r.terms),
     notes: s(r.notes),
     taxRate: n(r.tax_rate),
+    discountAmount: n(r.discount_amount ?? 0),
     lines: (r.lines ?? []).map((l) => ({
       ...l,
       quantity: n(l.quantity),
@@ -222,6 +227,7 @@ export function rowToDocument(r: DocumentRow): BusinessDocument {
     totals: { subtotal: n(r.subtotal), tax: n(r.tax), total: n(r.total) },
     updatedAt: s(r.updated_at),
   };
+  if (r.revision_of_id) doc.revisionOfId = r.revision_of_id;
   if (r.source_quotation_id) {
     doc.sourceQuotationId = r.source_quotation_id;
     doc.sourceQuotationNumber = s(r.source_quotation_number);

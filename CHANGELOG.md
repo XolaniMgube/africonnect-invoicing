@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-12
+
+- Drafts are unnumbered until issue. Editing issued invoices or quotations creates linked draft revisions, preserving the original and assigning the next number when the revision is issued. Added database enforcement and migration, with domain and browser coverage.
+
+- Added fixed rand discounts to invoice/quotation creation and editing, saved records, quotation conversion, previews and PDFs. VAT is calculated after the discount; amounts outside zero–subtotal are rejected. Added `20261112130000_document_discounts.sql` for Supabase.
+
+- Removed the default payment period field from add-business and business settings forms, and renamed the registration field to “Business Registration Number”.
+
+- Made VAT registration numbers optional when adding/editing businesses and saving/issuing invoices or quotations with a positive VAT rate. The 0–100 rate validation remains.
+- Added `20261112120000_optional_vat_number.sql` to remove the matching Supabase constraint; apply it to existing databases.
+
 ## 0.2.0 — 2026-11-05
 
 - Added a Supabase backend: employee sign-in with Supabase Auth, shared records in Postgres, and business logos in Supabase Storage. The browser-only demo remains available (and is what the main e2e suite uses); `NEXT_PUBLIC_DATA_BACKEND` chooses between them.

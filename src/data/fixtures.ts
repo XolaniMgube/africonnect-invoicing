@@ -216,7 +216,10 @@ export function createFixtures(): Database {
         businessId: b.id,
         customerId: customer.id,
         kind,
-        number: `${kind === "invoice" ? b.invoicePrefix : b.quotationPrefix}-${String(kind === "invoice" ? j + 1 : j - 2).padStart(4, "0")}`,
+        number:
+          j === 1 || j === 4
+            ? ""
+            : `${kind === "invoice" ? b.invoicePrefix : b.quotationPrefix}-${String(kind === "invoice" ? j + 1 : j - 2).padStart(4, "0")}`,
         status: j === 1 || j === 4 ? "draft" : "issued",
         date: `2026-11-0${4 - (j % 4)}`,
         endDate: kind === "invoice" ? "2026-12-04" : "2026-11-18",
@@ -226,6 +229,7 @@ export function createFixtures(): Database {
             : "Quotation valid for 14 days.",
         notes: b.notes,
         taxRate: b.taxRate,
+        discountAmount: 0,
         lines,
         snapshot: {
           issuer: structuredClone(b),

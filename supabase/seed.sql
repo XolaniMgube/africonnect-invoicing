@@ -332,6 +332,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -391,6 +392,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 14800,
   "tax": 2220,
   "total": 17020,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-04T10:00:00Z",
@@ -404,13 +406,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "business_id": "6fbf16ef-ded8-1f28-5d9a-d333cf678145",
   "customer_id": "86302235-55f0-9d05-4696-de962dfcce0a",
   "kind": "invoice",
-  "number": "GZ-INV-0002",
+  "number": "",
   "status": "draft",
   "document_date": "2026-11-03",
   "end_date": "2026-12-04",
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -470,6 +473,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 15000,
   "tax": 2250,
   "total": 17250,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-03T10:00:00Z",
@@ -490,6 +494,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -783,6 +788,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 176500,
   "tax": 26475,
   "total": 202975,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-02T10:00:00Z",
@@ -803,6 +809,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Quotation valid for 14 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -862,6 +869,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 14800,
   "tax": 2220,
   "total": 17020,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-01T10:00:00Z",
@@ -875,13 +883,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "business_id": "6fbf16ef-ded8-1f28-5d9a-d333cf678145",
   "customer_id": "7f76505c-5941-a46b-e986-6baca0d9331f",
   "kind": "quotation",
-  "number": "GZ-QUO-0002",
+  "number": "",
   "status": "draft",
   "document_date": "2026-11-04",
   "end_date": "2026-11-18",
   "terms": "Quotation valid for 14 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -941,6 +950,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 15000,
   "tax": 2250,
   "total": 17250,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-04T10:00:00Z",
@@ -961,6 +971,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1020,6 +1031,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 9250,
   "tax": 0,
   "total": 9250,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-04T10:00:00Z",
@@ -1033,13 +1045,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "business_id": "a46181e0-0797-8444-94c2-446bed782d4d",
   "customer_id": "9f86b39e-a56c-fe8f-2958-64637207540a",
   "kind": "invoice",
-  "number": "GG-INV-0002",
+  "number": "",
   "status": "draft",
   "document_date": "2026-11-03",
   "end_date": "2026-12-04",
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1099,6 +1112,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 4700,
   "tax": 0,
   "total": 4700,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-03T10:00:00Z",
@@ -1119,6 +1133,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1178,6 +1193,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 1950,
   "tax": 0,
   "total": 1950,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-02T10:00:00Z",
@@ -1198,6 +1214,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Quotation valid for 14 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1257,6 +1274,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 9250,
   "tax": 0,
   "total": 9250,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-01T10:00:00Z",
@@ -1270,13 +1288,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "business_id": "a46181e0-0797-8444-94c2-446bed782d4d",
   "customer_id": "5a5bb30e-66f6-dbee-1c6c-92734d114567",
   "kind": "quotation",
-  "number": "GG-QUO-0002",
+  "number": "",
   "status": "draft",
   "document_date": "2026-11-04",
   "end_date": "2026-11-18",
   "terms": "Quotation valid for 14 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1336,6 +1355,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 4700,
   "tax": 0,
   "total": 4700,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-04T10:00:00Z",
@@ -1356,6 +1376,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1415,6 +1436,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 32500,
   "tax": 4875,
   "total": 37375,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-04T10:00:00Z",
@@ -1428,13 +1450,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "business_id": "a4e8a23f-1869-dc98-39aa-62877a895424",
   "customer_id": "84867bbf-5abd-4c6d-4f33-f96b38446926",
   "kind": "invoice",
-  "number": "NC-INV-0002",
+  "number": "",
   "status": "draft",
   "document_date": "2026-11-03",
   "end_date": "2026-12-04",
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1494,6 +1517,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 13800,
   "tax": 2070,
   "total": 15870,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-03T10:00:00Z",
@@ -1514,6 +1538,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Payment within 30 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1573,6 +1598,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 15650,
   "tax": 2347.5,
   "total": 17997.5,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-02T10:00:00Z",
@@ -1593,6 +1619,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "terms": "Quotation valid for 14 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1652,6 +1679,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 32500,
   "tax": 4875,
   "total": 37375,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-01T10:00:00Z",
@@ -1665,13 +1693,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "business_id": "a4e8a23f-1869-dc98-39aa-62877a895424",
   "customer_id": "eac36178-2254-3a59-fac3-e460e94919b6",
   "kind": "quotation",
-  "number": "NC-QUO-0002",
+  "number": "",
   "status": "draft",
   "document_date": "2026-11-04",
   "end_date": "2026-11-18",
   "terms": "Quotation valid for 14 days.",
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
+  "discount_amount": 0,
   "lines": [
    {
     "id": "line-0",
@@ -1731,6 +1760,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "subtotal": 13800,
   "tax": 2070,
   "total": 15870,
+  "revision_of_id": null,
   "source_quotation_id": null,
   "source_quotation_number": null,
   "updated_at": "2026-11-04T10:00:00Z",

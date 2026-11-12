@@ -9,7 +9,7 @@ import { BusinessMark } from "@/components/ui";
  */
 export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
   const { issuer, customer } = doc.snapshot;
-  const totals = calculate(doc.lines, doc.taxRate);
+  const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   const invoice = doc.kind === "invoice";
   const draft = doc.status === "draft";
   const hasBank =
@@ -48,7 +48,7 @@ export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
         </div>
         <div className="paper-title">
           <h2>{invoice ? "INVOICE" : "QUOTATION"}</h2>
-          <strong>{doc.number || "Number assigned on save"}</strong>
+          <strong>{doc.number || "Number assigned on issue"}</strong>
           {draft && <span className="draft-stamp">DRAFT · NOT ISSUED</span>}
         </div>
       </div>
@@ -132,6 +132,12 @@ export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
           <span>Subtotal</span>
           <strong>{money(totals.subtotal)}</strong>
         </div>
+        {doc.discountAmount > 0 && (
+          <div>
+            <span>Discount</span>
+            <strong>−{money(doc.discountAmount)}</strong>
+          </div>
+        )}
         {doc.taxRate > 0 && (
           <div>
             <span>VAT ({doc.taxRate}%)</span>

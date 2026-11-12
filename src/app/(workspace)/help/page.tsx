@@ -28,7 +28,7 @@ export default function Page() {
             FileText,
             "03",
             "Create, review and issue",
-            "Save a draft while you work. Confirm the details before issuing. Issued invoices and quotations can still be edited; saving replaces them under the same number.",
+            "Save a draft while you work; it has no official number. Issuing assigns the next number. Editing an issued invoice or quotation creates a linked draft revision, leaving the original unchanged. Issue the revision when ready to assign its new number.",
           ],
           [
             Download,

@@ -39,8 +39,7 @@ import {
   endDateFor,
   money,
   nextNumber,
-  NUMBER_MAX,
-  numberTaken,
+  reviseDocument,
   validateDocument,
 } from "@/domain/documents";
 import type {
@@ -131,11 +130,7 @@ function Editor({
     if (errors.length) errorRef.current?.focus();
   }, [errors]);
   const issued = doc.status === "issued";
-  // Issued invoices can be reopened and saved again under the same number.
-  const [editing, setEditing] = useState(false);
-  // Until the employee types a number, a new document gets the next one.
-  const [numberTyped, setNumberTyped] = useState(false);
-  const readOnly = issued && !editing;
+  const readOnly = issued;
   const locked = readOnly || business.archived;
   const dirty = !readOnly && JSON.stringify(doc) !== baseline;
   useUnsavedChanges(dirty);
@@ -157,12 +152,8 @@ function Editor({
       lines: d.lines.map((l) => (l.id === id ? { ...l, ...partial } : l)),
     }));
   const suggested = nextNumber(db.documents, business, kind);
-  // What the number field shows, and what is saved ("" = the next number for
-  // a new document, or the current number for an existing one).
-  const numberField = numberTyped ? doc.number : doc.number || suggested;
-  const numberToSave = numberTyped || doc.number ? doc.number.trim() : "";
   const liveDoc = {
-    ...(readOnly || doc.sourceQuotationId
+    ...(readOnly || doc.sourceQuotationId || doc.revisionOfId
       ? doc
       : {
           ...doc,
@@ -173,21 +164,18 @@ function Editor({
               doc.snapshot.customer,
           },
         }),
-    number: readOnly
-      ? doc.number
-      : numberField.trim() || initial?.number || suggested,
+    number: readOnly ? doc.number : "",
   };
-  const totals = calculate(doc.lines, doc.taxRate);
+  const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   const title = kind === "invoice" ? "Invoice" : "Quotation";
   const linkedInvoiceId = db.documents.find(
     (d) => d.id === doc.id,
   )?.linkedInvoiceId;
   async function save(issue = false) {
     if (saving) return;
-    const toSave = { ...liveDoc, number: numberToSave };
+    const toSave = { ...liveDoc, number: "" };
     const validation = validateDocument(toSave);
-    const taken = numberToSave && numberTaken(db!.documents, toSave);
-    if (taken) validation.push(taken);
+
     if (validation.length) {
       setErrors(validation);
       setIssuing(false);
@@ -198,11 +186,7 @@ function Editor({
     const saved = await saveDocument(
       toSave,
       issue,
-      editing
-        ? `${title} ${liveDoc.number} updated. Download the PDF again to send the new version.`
-        : issue
-          ? `${title} issued.`
-          : "Draft saved.",
+      issue ? `${title} issued.` : "Draft saved.",
     );
     if (saved) {
       // Keep anything typed while the save was in flight.
@@ -214,10 +198,27 @@ function Editor({
       setBaseline(JSON.stringify(saved));
       setErrors([]);
       setIssuing(false);
-      setEditing(false);
-      setNumberTyped(false);
+
       if (!initial) router.replace(`/documents/${saved.id}`);
     }
+    setSaving(false);
+  }
+  async function revise() {
+    if (saving) return;
+    const draft = db!.documents.find(
+      (d) => d.revisionOfId === doc.id && d.status === "draft",
+    );
+    if (draft) {
+      router.push(`/documents/${draft.id}`);
+      return;
+    }
+    setSaving(true);
+    const saved = await saveDocument(
+      reviseDocument(doc),
+      false,
+      "Draft revision created. The issued original is unchanged.",
+    );
+    if (saved) router.push(`/documents/${saved.id}`);
     setSaving(false);
   }
   async function exportPdf() {
@@ -253,13 +254,11 @@ function Editor({
       </Link>
       <PageHeading
         eyebrow={kind.toUpperCase()}
-        title={doc.number || `New ${kind}`}
+        title={doc.number || `Draft ${kind}`}
         description={
           issued
-            ? editing
-              ? `Editing an issued ${kind} from ${doc.snapshot.issuer.name}. Saving replaces it under the same number.`
-              : `Issued by ${doc.snapshot.issuer.name}. Preserved exactly as issued.`
-            : "Build a clear, professional document. Review it before issuing."
+            ? `Issued by ${doc.snapshot.issuer.name}. Preserved exactly as issued.`
+            : "Draft only. An official number is assigned when you issue it."
         }
       >
         <Badge status={doc.status} />
@@ -276,6 +275,26 @@ function Editor({
           {pdfBusy ? "Preparing PDF…" : "Download PDF"}
         </Button>
       </PageHeading>
+      {doc.revisionOfId && (
+        <div className="info-note">
+          Revision of{" "}
+          <Link href={`/documents/${doc.revisionOfId}`}>
+            {db.documents.find((d) => d.id === doc.revisionOfId)?.number ||
+              "original document"}
+          </Link>
+          . The original remains unchanged.
+        </div>
+      )}
+      {db.documents
+        .filter((d) => d.revisionOfId === doc.id)
+        .map((revision) => (
+          <div className="info-note" key={revision.id}>
+            <Link href={`/documents/${revision.id}`}>
+              {revision.number || "Open draft revision"}
+            </Link>
+            <Badge status={revision.status} />
+          </div>
+        ))}
       {doc.sourceQuotationId && (
         <div className="info-note">
           <Link2 size={19} />
@@ -299,12 +318,16 @@ function Editor({
               <strong>Issued and preserved</strong>
               <p>
                 Changes to business details, customers or prices elsewhere will
-                not affect it. To change this {kind}, edit it: saving replaces
-                it under the same number.
+                not affect it. Editing creates a separate draft revision.
+                Issuing that revision assigns the next available number.
               </p>
             </div>
             {!business.archived && (
-              <Button variant="secondary" onClick={() => setEditing(true)}>
+              <Button
+                variant="secondary"
+                disabled={saving}
+                onClick={() => void revise()}
+              >
                 <PencilLine size={16} />
                 Edit {kind}
               </Button>
@@ -334,18 +357,6 @@ function Editor({
           {business.archived && (
             <div className="info-note">
               Restore this business to edit or issue this draft.
-            </div>
-          )}
-          {editing && (
-            <div className="info-note">
-              <PencilLine size={19} />
-              <span>
-                You are editing issued {kind} {doc.number}. Saving replaces it
-                under the same number; anyone who already has the PDF keeps the
-                old version, so send them the new one.
-                {linkedInvoiceId &&
-                  " It has already been converted: the linked invoice keeps what it copied and is not changed."}
-              </span>
             </div>
           )}
           {errors.length > 0 && (
@@ -442,21 +453,9 @@ function Editor({
                           ? "Invoice number"
                           : "Quotation number"
                       }
-                      hint={
-                        initial
-                          ? "Change it if this document needs a different number."
-                          : `The next number is ${suggested}. Type another to continue from an existing number; later documents follow on from it.`
-                      }
+                      hint="Assigned on issue. Drafts do not reserve numbers; this estimate may change if another document is issued first."
                     >
-                      <input
-                        value={numberField}
-                        maxLength={NUMBER_MAX}
-                        placeholder={initial?.number || suggested}
-                        onChange={(e) => {
-                          setNumberTyped(true);
-                          set({ number: e.target.value });
-                        }}
-                      />
+                      <input value={suggested} readOnly />
                     </Field>
                   </div>
                   <Field
@@ -592,6 +591,37 @@ function Editor({
                   <strong>{money(totals.subtotal)}</strong>
                 </div>
                 <Field
+                  label="Discount amount (R)"
+                  hint="Deducted from the subtotal before VAT. Use 0 for no discount."
+                >
+                  <input
+                    type="number"
+                    disabled={locked}
+                    min="0"
+                    max={totals.subtotal}
+                    step="0.01"
+                    value={
+                      Number.isNaN(doc.discountAmount)
+                        ? ""
+                        : (doc.discountAmount ?? 0)
+                    }
+                    onChange={(e) =>
+                      set({
+                        discountAmount:
+                          e.target.value === "" ? 0 : Number(e.target.value),
+                      })
+                    }
+                  />
+                </Field>
+                {(doc.discountAmount ?? 0) > 0 && (
+                  <div className="summary-row">
+                    <span>After discount</span>
+                    <strong>
+                      {money(totals.subtotal - doc.discountAmount)}
+                    </strong>
+                  </div>
+                )}
+                <Field
                   label="VAT rate (%)"
                   hint="Use 0 if this business does not charge VAT."
                 >
@@ -620,69 +650,35 @@ function Editor({
                   </span>
                   <strong>{money(totals.total)}</strong>
                 </div>
-                {editing ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      disabled={saving}
-                      onClick={() => {
-                        if (
-                          dirty &&
-                          !window.confirm(
-                            `Discard your changes to this ${kind}?`,
-                          )
-                        )
-                          return;
-                        setDoc(JSON.parse(baseline));
-                        setErrors([]);
-                        setEditing(false);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      disabled={locked || saving || !dirty}
-                      onClick={() => save(true)}
-                    >
-                      <Save size={17} />
-                      {saving ? "Saving…" : "Save changes"}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="secondary"
-                      disabled={locked || saving}
-                      onClick={() => save()}
-                    >
-                      <Save size={17} />
-                      Save draft
-                    </Button>
-                    <Button
-                      disabled={locked || saving}
-                      onClick={() => {
-                        const e = validateDocument(liveDoc);
-                        setErrors(e);
-                        if (!e.length) setIssuing(true);
-                      }}
-                    >
-                      <Send size={17} />
-                      Issue {kind}
-                    </Button>
-                  </>
-                )}
+                <>
+                  <Button
+                    variant="secondary"
+                    disabled={locked || saving}
+                    onClick={() => save()}
+                  >
+                    <Save size={17} />
+                    Save draft
+                  </Button>
+                  <Button
+                    disabled={locked || saving}
+                    onClick={() => {
+                      const e = validateDocument(liveDoc);
+                      setErrors(e);
+                      if (!e.length) setIssuing(true);
+                    }}
+                  >
+                    <Send size={17} />
+                    Issue {kind}
+                  </Button>
+                </>
                 <small>
                   {dirty
                     ? "Unsaved changes"
-                    : editing
-                      ? "No changes yet"
-                      : initial
-                        ? "All changes saved"
-                        : "Not saved yet"}
+                    : initial
+                      ? "All changes saved"
+                      : "Not saved yet"}
                   <br />
-                  {editing
-                    ? `Saving replaces the issued ${kind}.`
-                    : `Issued ${kind}s can still be edited later.`}
+                  Editing an issued document creates a new draft revision.
                 </small>
               </section>
               <div className="editor-tip">
@@ -715,7 +711,7 @@ function Editor({
         open={issuing}
         onOpenChange={setIssuing}
         title={`Issue this ${kind}?`}
-        description={`This saves the business, customer, line items and totals as issued. You can still edit the ${kind} later; saving an edit replaces it under the same number.`}
+        description={`This assigns the next available number and preserves the ${kind}. Later edits create a separate draft revision; the issued original stays unchanged.`}
       >
         <div className="issue-review">
           <span>{liveDoc.snapshot.customer.name}</span>

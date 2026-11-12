@@ -21,6 +21,16 @@ const offline = (e: Failure) =>
 
 export function databaseMessage(error: Failure): string {
   if (offline(error)) return OFFLINE;
+  if (
+    (error.code === "PGRST204" || error.code === "42703") &&
+    /discount_amount/.test(error.message ?? "")
+  )
+    return "Document discounts are not enabled in the database yet. Ask an administrator to apply the document-discounts update, then save again. Nothing was saved.";
+  if (
+    (error.code === "PGRST204" || error.code === "42703") &&
+    /revision_of_id/.test(error.message ?? "")
+  )
+    return "Document revisions are not enabled in the database yet. Ask an administrator to apply the document-revisions update. Nothing was saved.";
   switch (error.code) {
     case "P0001": // raised by a database rule
       return error.message || "The database rejected this change.";

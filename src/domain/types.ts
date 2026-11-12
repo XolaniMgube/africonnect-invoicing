@@ -68,9 +68,11 @@ export type BusinessDocument = {
   terms: string;
   notes: string;
   taxRate: number;
+  discountAmount: number;
   lines: LineItem[];
   snapshot: DocumentSnapshot;
   totals: Totals;
+  revisionOfId?: string;
   sourceQuotationId?: string;
   sourceQuotationNumber?: string;
   linkedInvoiceId?: string;

@@ -132,7 +132,7 @@ test("shared records: logo upload, numbering by the database, issue, editing an 
   const businessId = await createBusiness(page, name);
   const url = await draft(page, businessId, "invoice");
   await expect(
-    page.getByRole("heading", { name: "INV-0001", exact: true }),
+    page.getByRole("heading", { name: "Draft invoice", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Issue invoice", exact: true })
@@ -150,26 +150,24 @@ test("shared records: logo upload, numbering by the database, issue, editing an 
   ).toBeVisible();
   await expect(other.locator(".document-paper:visible")).toContainText(name);
 
-  // The issued invoice can be edited; it keeps its number and stays issued.
-  const quantity = (p: Page) =>
-    p.getByLabel("Quantity", { exact: true }).filter({ visible: true });
+  // Editing creates a new draft; the original remains visible to the other session.
   await page.getByRole("button", { name: "Edit invoice" }).click();
-  await quantity(page).fill("3");
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText("INV-0001 updated")).toBeVisible();
+  await expect(page).not.toHaveURL(url);
+  await page.getByLabel("Quantity", { exact: true }).fill("3");
+  await page
+    .getByRole("button", { name: "Issue invoice", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Confirm & issue" }).click();
   await expect(
-    page.getByText("Issued and preserved", { exact: true }),
+    page.getByRole("heading", { name: "INV-0002", exact: true }),
   ).toBeVisible();
-  // An employee still looking at the old version cannot overwrite the edit.
-  await other.getByRole("button", { name: "Edit invoice" }).click();
-  await quantity(other).fill("4");
-  await other.getByRole("button", { name: "Save changes" }).click();
-  await expect(other.locator(".toast.error")).toContainText(
-    "Another employee changed this document",
-  );
   await other.reload();
-  await other.getByRole("button", { name: "Edit invoice" }).click();
-  await expect(quantity(other)).toHaveValue("3");
+  await expect(
+    other.getByRole("heading", { name: "INV-0001", exact: true }),
+  ).toBeVisible();
+  await expect(
+    other.getByRole("link", { name: "INV-0002", exact: true }),
+  ).toBeVisible();
 
   const event = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PDF", exact: true }).click();
@@ -178,31 +176,18 @@ test("shared records: logo upload, numbering by the database, issue, editing an 
   // The uploaded logo is embedded as an image.
   expect(data.toString("latin1")).toMatch(/\/Subtype \/Image/);
 
-  // The next invoice gets the next number.
+  // Saving further drafts never consumes the next number.
   await draft(page, businessId, "invoice");
   await expect(
-    page.getByRole("heading", { name: "INV-0002", exact: true }),
+    page.getByRole("heading", { name: "Draft invoice", exact: true }),
   ).toBeVisible();
-
-  // A typed number is kept, and the database continues from it.
-  await page.goto(`/businesses/${businessId}/documents/new?kind=invoice`);
-  const number = page
-    .getByLabel("Invoice number", { exact: true })
-    .filter({ visible: true });
-  await expect(number).toHaveValue("INV-0003");
-  await number.fill("0500");
-  await page.getByRole("combobox", { name: "Customer", exact: true }).click();
-  await page.getByRole("option", { name: /E2E Customer/ }).click();
-  await page.getByRole("button", { name: "From catalogue" }).click();
-  await page.getByRole("button", { name: /E2E Service/ }).click();
-  await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "0500", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Invoice number", { exact: true })).toHaveValue(
+    "INV-0003",
+  );
   await draft(page, businessId, "invoice");
-  await expect(
-    page.getByRole("heading", { name: "INV-0501", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Invoice number", { exact: true })).toHaveValue(
+    "INV-0003",
+  );
 });
 
 test("a quotation converts once, even when two employees convert it together", async ({

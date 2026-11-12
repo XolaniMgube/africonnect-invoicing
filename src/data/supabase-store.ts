@@ -329,9 +329,9 @@ export function createSupabaseStore(): Store {
           await must(
             supabase()
               .from("documents")
-              // Only a number the employee typed; otherwise the database
-              // assigns the next one, safely even if two are created at once.
-              .insert(forInsert({ ...doc, number: input.number.trim() }))
+              // The database assigns numbers only on issue, including
+              // concurrent issues by different employees.
+              .insert(forInsert({ ...doc, number: "" }))
               .select()
               .single(),
           ),
@@ -343,7 +343,7 @@ export function createSupabaseStore(): Store {
           .from("documents")
           .update(
             omit(
-              forInsert(doc),
+              forInsert({ ...doc, number: "" }),
               "id",
               "business_id",
               "kind",

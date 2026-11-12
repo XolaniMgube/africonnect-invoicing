@@ -9,16 +9,21 @@ import type {
 export const clone = <T>(value: T): T => structuredClone(value);
 export const cents = (value: number) =>
   Math.round((value + Number.EPSILON) * 100);
-export function calculate(lines: LineItem[], taxRate: number): Totals {
+export function calculate(
+  lines: LineItem[],
+  taxRate: number,
+  discountAmount = 0,
+): Totals {
   const subtotal = lines.reduce(
     (sum, line) => sum + cents(line.quantity * line.price),
     0,
   );
-  const tax = Math.round((subtotal * taxRate) / 100);
+  const discountedSubtotal = subtotal - cents(discountAmount);
+  const tax = Math.round((discountedSubtotal * taxRate) / 100);
   return {
     subtotal: subtotal / 100,
     tax: tax / 100,
-    total: (subtotal + tax) / 100,
+    total: (discountedSubtotal + tax) / 100,
   };
 }
 export const money = (value: number) =>
@@ -88,6 +93,7 @@ export function blankDocument(
         : `Quotation valid for ${business.validityDays} days.`,
     notes: business.notes,
     taxRate: business.taxRate,
+    discountAmount: 0,
     lines: [],
     snapshot: {
       issuer: clone(business),
@@ -112,13 +118,7 @@ export function blankDocument(
 /** Longest document number accepted (the database has the same limit). */
 export const NUMBER_MAX = 40;
 const trailingDigits = (number: string) => number.match(/(\d+)$/)?.[1];
-/**
- * The number a new document gets unless the employee types another: one more
- * than the highest number this business has used for this type, keeping that
- * number's zero-padding (0123 → 0124; 4 digits when there is none yet), after
- * the business's prefix and a hyphen (no prefix: just the digits). Numbers
- * without trailing digits are ignored. `supabase/migrations` repeats this rule.
- */
+/** Next official number, based only on issued documents of this business/type. */
 export function nextNumber(
   documents: BusinessDocument[],
   business: Pick<Business, "id" | "invoicePrefix" | "quotationPrefix">,
@@ -126,7 +126,12 @@ export function nextNumber(
 ) {
   let highest: string | undefined;
   for (const d of documents) {
-    if (d.businessId !== business.id || d.kind !== kind) continue;
+    if (
+      d.status !== "issued" ||
+      d.businessId !== business.id ||
+      d.kind !== kind
+    )
+      continue;
     const digits = trailingDigits(d.number);
     if (digits && (!highest || BigInt(digits) > BigInt(highest)))
       highest = digits;
@@ -146,6 +151,7 @@ export function numberTaken(
   const number = doc.number.trim();
   const other = documents.find(
     (d) =>
+      d.status === "issued" &&
       d.id !== doc.id &&
       d.businessId === doc.businessId &&
       d.kind === doc.kind &&
@@ -197,11 +203,22 @@ export function validateDocument(doc: BusinessDocument): string[] {
   });
   if (!Number.isFinite(doc.taxRate) || doc.taxRate < 0 || doc.taxRate > 100)
     errors.push("Tax rate must be between 0 and 100.");
-  if (doc.taxRate > 0 && !doc.snapshot.issuer.vat.trim())
-    errors.push(
-      "Add the issuer VAT registration number in business settings before applying VAT.",
-    );
-  if (!Number.isSafeInteger(cents(calculate(doc.lines, doc.taxRate).total)))
+  const discount = doc.discountAmount ?? 0;
+  if (
+    !Number.isFinite(discount) ||
+    discount < 0 ||
+    !Number.isSafeInteger(cents(discount))
+  )
+    errors.push("Discount amount must be a valid nonnegative amount.");
+  else if (Math.abs(discount - cents(discount) / 100) > 1e-9)
+    errors.push("Discount amount can have at most two decimal places.");
+  else if (discount > calculate(doc.lines, 0).subtotal)
+    errors.push("Discount amount cannot exceed the subtotal.");
+  if (
+    !Number.isSafeInteger(
+      cents(calculate(doc.lines, doc.taxRate, discount).total),
+    )
+  )
     errors.push("Document total is too large.");
   return errors;
 }
@@ -212,9 +229,10 @@ export function saveDocument(
 ): Database {
   const next = clone(db);
   const existing = next.documents.find((d) => d.id === input.id);
-  // Issued documents can be edited in place (same number, still issued).
-  if (existing?.status === "issued" && !issue)
-    throw new Error("An issued document cannot go back to being a draft.");
+  if (existing?.status === "issued")
+    throw new Error(
+      "Issued documents are preserved. Create a draft revision to make changes.",
+    );
   const business = next.businesses.find((b) => b.id === input.businessId);
   const customer = next.customers.find(
     (c) => c.id === input.customerId && c.businessId === input.businessId,
@@ -232,32 +250,57 @@ export function saveDocument(
     throw new Error("The document business and type cannot change.");
   const doc = clone(input);
   // Converted drafts retain quoted identities unless the employee explicitly selects a different customer.
-  doc.snapshot = doc.sourceQuotationId
-    ? {
-        issuer: clone(doc.snapshot.issuer),
-        customer:
-          doc.snapshot.customer.id === customer.id
-            ? clone(doc.snapshot.customer)
-            : clone(customer),
-      }
-    : { issuer: clone(business), customer: clone(customer) };
+  doc.snapshot =
+    doc.sourceQuotationId || doc.revisionOfId
+      ? {
+          issuer: clone(doc.snapshot.issuer),
+          customer:
+            doc.snapshot.customer.id === customer.id
+              ? clone(doc.snapshot.customer)
+              : clone(customer),
+        }
+      : { issuer: clone(business), customer: clone(customer) };
   const errors = validateDocument(doc);
   if (errors.length) throw new Error(errors.join("\n"));
-  // A number typed by the employee is kept; an empty one means "the next
-  // number" for a new document, or "unchanged" for an existing one.
-  doc.number =
-    doc.number.trim() ||
-    existing?.number ||
-    nextNumber(next.documents, business, doc.kind);
-  const taken = numberTaken(next.documents, doc);
-  if (taken) throw new Error(taken);
+  if (existing && existing.revisionOfId !== doc.revisionOfId)
+    throw new Error("The revision origin cannot change.");
+  if (doc.revisionOfId) {
+    const original = next.documents.find((d) => d.id === doc.revisionOfId);
+    if (
+      !original ||
+      original.status !== "issued" ||
+      original.businessId !== doc.businessId ||
+      original.kind !== doc.kind
+    )
+      throw new Error(
+        "A revision must refer to an issued document of the same business and type.",
+      );
+  }
+  doc.number = issue ? nextNumber(next.documents, business, doc.kind) : "";
   doc.status = issue ? "issued" : "draft";
-  doc.totals = calculate(doc.lines, doc.taxRate);
+  doc.discountAmount = cents(doc.discountAmount ?? 0) / 100;
+  doc.totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   doc.updatedAt = new Date().toISOString();
   const index = next.documents.findIndex((d) => d.id === doc.id);
   if (index < 0) next.documents.unshift(doc);
   else next.documents[index] = doc;
   return next;
+}
+/** Start a separate draft; the issued original is never changed. */
+export function reviseDocument(original: BusinessDocument): BusinessDocument {
+  if (original.status !== "issued")
+    throw new Error("Only issued documents can be revised.");
+  return {
+    ...clone(original),
+    id: crypto.randomUUID(),
+    number: "",
+    status: "draft",
+    revisionOfId: original.id,
+    sourceQuotationId: undefined,
+    sourceQuotationNumber: undefined,
+    linkedInvoiceId: undefined,
+    updatedAt: new Date().toISOString(),
+  };
 }
 export function convertQuotation(
   db: Database,
@@ -280,6 +323,7 @@ export function convertQuotation(
     endDate: addDays(today(), business.paymentDays),
     terms: `Payment within ${business.paymentDays} days.`,
     notes: business.notes,
+    revisionOfId: undefined,
     sourceQuotationId: quote.id,
     sourceQuotationNumber: quote.number,
     linkedInvoiceId: undefined,

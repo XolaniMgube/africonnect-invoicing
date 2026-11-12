@@ -244,7 +244,7 @@ function PageChrome({ doc }: { doc: BusinessDocument }) {
 
 export function DocumentPDF({ doc }: { doc: BusinessDocument }) {
   const { issuer, customer } = doc.snapshot;
-  const totals = calculate(doc.lines, doc.taxRate);
+  const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   const invoice = doc.kind === "invoice";
   const accent = issuer.accent;
   const hasBank =
@@ -288,7 +288,7 @@ export function DocumentPDF({ doc }: { doc: BusinessDocument }) {
           <View style={{ width: "38%" }}>
             <Text style={{ ...s.title, color: accent }}>{titleOf(doc)}</Text>
             <Text style={{ ...s.right, ...s.bold }}>
-              {doc.number || "Number assigned on save"}
+              {doc.number || "Number assigned on issue"}
             </Text>
             {doc.status === "draft" && (
               <Text style={s.draft}>DRAFT · NOT ISSUED</Text>
@@ -359,6 +359,12 @@ export function DocumentPDF({ doc }: { doc: BusinessDocument }) {
             <Text>Subtotal</Text>
             <Text>{money(totals.subtotal)}</Text>
           </View>
+          {doc.discountAmount > 0 && (
+            <View style={s.totalRow}>
+              <Text>Discount</Text>
+              <Text>-{money(doc.discountAmount)}</Text>
+            </View>
+          )}
           {doc.taxRate > 0 && (
             <View style={s.totalRow}>
               <Text>VAT ({doc.taxRate}%)</Text>

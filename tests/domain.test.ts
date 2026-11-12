@@ -8,6 +8,7 @@ import {
   convertQuotation,
   endDateFor,
   nextNumber,
+  reviseDocument,
   saveDocument,
   scoped,
   validateDocument,
@@ -83,7 +84,7 @@ test("numbering is per business and per type; duplicate display numbers are safe
       db.customers.find((c) => c.businessId === business.id),
     );
     invoice.lines = [item(100)];
-    db = saveDocument(db, invoice);
+    db = saveDocument(db, invoice, true);
     assert.equal(
       db.documents.find((d) => d.id === invoice.id)?.number,
       "GZ-INV-0004",
@@ -94,9 +95,9 @@ test("numbering is per business and per type; duplicate display numbers are safe
       db.customers.find((c) => c.businessId === business.id),
     );
     quote.lines = [item(100)];
-    db = saveDocument(db, quote);
+    db = saveDocument(db, quote, true);
     assert.ok(
-      db.documents.find((d) => d.id === quote.id)?.number.endsWith("-0003"),
+      db.documents.find((d) => d.id === quote.id)?.number.endsWith("-0002"),
     );
   }
   assert.equal(
@@ -127,30 +128,55 @@ test("issuing snapshots all identities and prices; later profile, customer and i
   );
   assert.throws(
     () => saveDocument(db, { ...issued, notes: "overwritten" }),
-    /cannot go back to being a draft/,
+    /Issued documents are preserved/g,
   );
 });
-test("issued invoices and quotations can be edited in place, but not returned to draft", () => {
+test("issued originals are immutable and revisions receive the next number only on issue", () => {
   let db = createFixtures();
   for (const kind of ["invoice", "quotation"] as const) {
-    const doc = clone(
+    const original = clone(
       db.documents.find((d) => d.kind === kind && d.status === "issued")!,
     );
-    doc.lines = [{ ...doc.lines[0], quantity: 2, price: 50 }];
-    db = saveDocument(db, doc, true);
-    const edited = db.documents.find((d) => d.id === doc.id)!;
-    assert.equal(edited.number, doc.number);
-    assert.equal(edited.status, "issued");
-    assert.equal(edited.totals.subtotal, 100);
+    assert.throws(
+      () => saveDocument(db, { ...original, notes: "overwrite" }, true),
+      /preserved/,
+    );
+    const next = nextNumber(db.documents, db.businesses[0], kind);
+    const draft = reviseDocument(original);
+    draft.lines = [item(50, 2)];
+    db = saveDocument(db, draft);
+    assert.equal(db.documents.find((d) => d.id === draft.id)!.number, "");
+    assert.equal(nextNumber(db.documents, db.businesses[0], kind), next);
+    assert.deepEqual(
+      db.documents.find((d) => d.id === original.id),
+      original,
+    );
+    db = saveDocument(db, draft, true);
+    const revision = db.documents.find((d) => d.id === draft.id)!;
+    assert.equal(revision.number, next);
+    assert.equal(revision.revisionOfId, original.id);
+    assert.equal(revision.totals.subtotal, 100);
+    assert.deepEqual(
+      db.documents.find((d) => d.id === original.id),
+      original,
+    );
+    const second = reviseDocument(revision);
+    db = saveDocument(db, second, true);
+    assert.notEqual(db.documents.find((d) => d.id === second.id)!.number, next);
+    assert.equal(documentToRow(second).revision_of_id, revision.id);
     assert.equal(
-      db.documents.filter(
-        (d) => d.businessId === doc.businessId && d.number === doc.number,
-      ).length,
-      1,
+      parseDatabase(JSON.stringify(db)).documents.find(
+        (d) => d.id === second.id,
+      )!.revisionOfId,
+      revision.id,
     );
     assert.throws(
-      () => saveDocument(db, { ...edited, notes: "changed" }),
-      /cannot go back to being a draft/,
+      () =>
+        saveDocument(db, {
+          ...reviseDocument(original),
+          revisionOfId: "missing",
+        }),
+      /revision must refer/,
     );
   }
 });
@@ -213,9 +239,23 @@ test("invalid dates, prices, quantities, tax and missing issuer details are reje
   assert.ok(validateDocument(doc).length >= 6);
   const noVat = clone(db.documents.find((d) => d.businessId === "green")!);
   noVat.taxRate = 15;
-  assert.ok(
-    validateDocument(noVat).some((e) => e.includes("VAT registration")),
-  );
+  assert.deepEqual(validateDocument(noVat), []);
+  for (const kind of ["invoice", "quotation"] as const) {
+    const draft = blankDocument(
+      db.businesses.find((b) => b.id === "green")!,
+      kind,
+      db.customers.find((c) => c.businessId === "green"),
+    );
+    draft.taxRate = 15;
+    draft.lines = [item(100)];
+    const saved = saveDocument(db, draft, true).documents.find(
+      (d) => d.id === draft.id,
+    )!;
+    assert.equal(saved.snapshot.issuer.vat, "");
+    assert.equal(saved.status, "issued");
+    assert.equal(saved.totals.tax, 15);
+    assert.equal(saved.totals.total, 115);
+  }
 });
 test("storage failures do not report success, mutate prior state or erase malformed data", () => {
   const db = createFixtures();
@@ -256,18 +296,21 @@ test("storage failures do not report success, mutate prior state or erase malfor
     parseDatabase(JSON.stringify({ ...db, businesses: [{ id: "broken" }] })),
   );
 });
-test("business profiles need VAT numbers before charging VAT and distinct, valid prefixes", () => {
+test("business profiles allow optional VAT numbers and require distinct, valid prefixes", () => {
   const db = createFixtures();
   const green = db.businesses.find((b) => b.id === "green")!;
   assert.deepEqual(validateBusiness(green), []);
-  assert.match(
-    validateBusiness({ ...green, taxRate: 15 }).join(" "),
-    /VAT registration number/,
-  );
-  assert.throws(
-    () => upsertBusiness(db, { ...green, taxRate: 15 }),
-    /VAT registration number/,
-  );
+  for (const vat of ["", "   ", "DEMO-VAT-123"]) {
+    const business = { ...green, taxRate: 15, vat };
+    assert.deepEqual(validateBusiness(business), []);
+    assert.doesNotThrow(() => upsertBusiness(db, business));
+    assert.doesNotThrow(() =>
+      upsertBusiness(db, { ...business, id: `new-${vat}` }),
+    );
+  }
+  for (const taxRate of [-1, 101, NaN, Infinity]) {
+    assert.match(validateBusiness({ ...green, taxRate }).join(" "), /VAT rate/);
+  }
   assert.match(
     validateBusiness({ ...green, quotationPrefix: "gg-inv" }).join(" "),
     /different invoice and quotation prefixes/,
@@ -405,36 +448,128 @@ test("the hidden due / expiry date follows the document date and never blocks a 
   assert.ok(!validateDocument(doc).some((e) => /date/i.test(e)));
 });
 
-test("document numbers: chosen numbers are kept, later ones continue from them, prefixes may be empty", () => {
+test("drafts never reserve numbers, including legacy drafts; issuing uses the current next number", () => {
   let db = createFixtures();
-  const green = db.businesses.find((b) => b.id === "green")!;
-  assert.equal(nextNumber(db.documents, green, "invoice"), "GG-INV-0004");
-  // A chosen number is kept, and the next suggestion continues from it.
-  const draft = blankDocument(green, "invoice", db.customers[2]);
-  draft.lines = [{ ...db.documents[0].lines[0] }];
-  db = saveDocument(db, { ...draft, number: " 0123 " });
-  assert.equal(db.documents.find((d) => d.id === draft.id)!.number, "0123");
-  assert.equal(nextNumber(db.documents, green, "invoice"), "GG-INV-0124");
-  // The same number cannot be used twice by one business for one type.
-  const copy = { ...draft, id: crypto.randomUUID(), number: "0123" };
-  assert.throws(() => saveDocument(db, copy), /already used/);
-  // An empty number keeps an existing document's number.
-  db = saveDocument(db, { ...draft, number: "", notes: "Edited" });
-  assert.equal(db.documents.find((d) => d.id === draft.id)!.number, "0123");
-  // Without a prefix the number is just the digits; padding follows the
-  // highest number, and grows when it has to.
-  const plain = { ...green, invoicePrefix: "", quotationPrefix: "" };
-  assert.deepEqual(validateBusiness(plain), []);
-  assert.equal(nextNumber(db.documents, plain, "invoice"), "0124");
-  assert.equal(nextNumber([], plain, "quotation"), "0001");
-  const nines = [{ ...db.documents[0], businessId: "x", number: "999" }];
-  assert.equal(nextNumber(nines, { ...plain, id: "x" }, "invoice"), "1000");
-  assert.match(
-    validateBusiness({
-      ...green,
-      invoicePrefix: "INV",
-      quotationPrefix: "inv",
-    }).join(" "),
-    /different invoice and quotation prefixes/,
+  const business = db.businesses[0];
+  const draft = blankDocument(business, "invoice", db.customers[0]);
+  draft.lines = [item(100)];
+  const number = nextNumber(db.documents, business, "invoice");
+  db = saveDocument(db, { ...draft, number: "9999" });
+  assert.equal(db.documents.find((d) => d.id === draft.id)!.number, "");
+  assert.equal(nextNumber(db.documents, business, "invoice"), number);
+  const other = { ...draft, id: crypto.randomUUID() };
+  db = saveDocument(db, other, true);
+  assert.equal(db.documents.find((d) => d.id === other.id)!.number, number);
+  db = saveDocument(db, draft, true);
+  assert.equal(
+    db.documents.find((d) => d.id === draft.id)!.number,
+    "GZ-INV-0005",
+  );
+  const legacy = { ...draft, id: crypto.randomUUID(), number: "9999" };
+  db.documents.push(legacy);
+  assert.equal(
+    parseDatabase(JSON.stringify(db)).documents.find((d) => d.id === legacy.id)!
+      .number,
+    "",
+  );
+  assert.equal(
+    nextNumber(db.documents, { ...business, invoicePrefix: "" }, "invoice"),
+    "0006",
+  );
+});
+
+test("fixed discounts reduce the subtotal before VAT with cent rounding", () => {
+  assert.deepEqual(calculate([item(15000)], 15, 1000), {
+    subtotal: 15000,
+    tax: 2100,
+    total: 16100,
+  });
+  assert.deepEqual(calculate([item(333.333333, 3)], 15, 100), {
+    subtotal: 1000,
+    tax: 135,
+    total: 1035,
+  });
+  assert.deepEqual(calculate([item(100)], 0, 10), {
+    subtotal: 100,
+    tax: 0,
+    total: 90,
+  });
+  assert.deepEqual(calculate([item(100)], 15, 100), {
+    subtotal: 100,
+    tax: 0,
+    total: 0,
+  });
+  assert.deepEqual(calculate([item(0.335), item(0.335)], 15, 0.01), {
+    subtotal: 0.68,
+    tax: 0.1,
+    total: 0.77,
+  });
+});
+
+test("discounts persist through drafts, issued edits, row mapping and quotation conversion", () => {
+  let db = createFixtures();
+  const quote = blankDocument(db.businesses[0], "quotation", db.customers[0]);
+  quote.lines = [item(100)];
+  quote.discountAmount = 10;
+  db = saveDocument(db, quote);
+  let saved = db.documents.find((d) => d.id === quote.id)!;
+  assert.equal(
+    parseDatabase(JSON.stringify(db)).documents.find((d) => d.id === quote.id)!
+      .discountAmount,
+    10,
+  );
+  db = saveDocument(db, saved, true);
+  saved = db.documents.find((d) => d.id === quote.id)!;
+  const converted = convertQuotation(db, quote.id);
+  const invoice = converted.db.documents.find(
+    (d) => d.id === converted.invoiceId,
+  )!;
+  assert.equal(invoice.discountAmount, 10);
+  assert.deepEqual(invoice.totals, { subtotal: 100, tax: 13.5, total: 103.5 });
+  assert.equal(documentToRow(invoice).discount_amount, 10);
+  const roundTrip = rowsToDatabase({
+    businesses: db.businesses.map(businessToRow),
+    customers: db.customers.map(customerToRow),
+    items: db.items.map(itemToRow),
+    documents: converted.db.documents.map(documentToRow),
+  });
+  assert.equal(
+    roundTrip.documents.find((d) => d.id === invoice.id)!.discountAmount,
+    10,
+  );
+  const revision = reviseDocument(saved);
+  const edited = saveDocument(
+    converted.db,
+    { ...revision, discountAmount: 20 },
+    true,
+  );
+  assert.deepEqual(edited.documents.find((d) => d.id === revision.id)!.totals, {
+    subtotal: 100,
+    tax: 12,
+    total: 92,
+  });
+  assert.equal(
+    edited.documents.find((d) => d.id === invoice.id)!.discountAmount,
+    10,
+  );
+});
+
+test("invalid discounts are rejected and old records default to zero without changing totals", () => {
+  const db = createFixtures();
+  const draft = blankDocument(db.businesses[0], "invoice", db.customers[0]);
+  draft.lines = [item(100)];
+  for (const discountAmount of [-1, 100.01, NaN, Infinity, 0.001]) {
+    assert.throws(
+      () => saveDocument(db, { ...draft, discountAmount }),
+      /Discount amount/,
+    );
+  }
+  const legacy = JSON.parse(JSON.stringify(db));
+  for (const doc of legacy.documents) delete doc.discountAmount;
+  const loaded = parseDatabase(JSON.stringify(legacy));
+  assert.ok(loaded.documents.every((d) => d.discountAmount === 0));
+  assert.deepEqual(
+    loaded.documents.map((d) => d.totals),
+    db.documents.map((d) => d.totals),
   );
 });

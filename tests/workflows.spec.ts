@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import fs from "node:fs/promises";
+import { createFixtures } from "../src/data/fixtures";
 // These tests use the fictional fixtures of the browser-only demo backend.
 test.skip(
   process.env.E2E_SUPABASE === "1",
@@ -154,21 +155,9 @@ test("business creation, editing, customers, catalogue, context switch and archi
   await expect(page.locator("tbody:visible")).toContainText("Test Recipient");
   await page.reload();
   await expect(page.locator("tbody:visible")).toContainText("Test Recipient");
-  // Charging VAT requires the business's VAT registration number.
+  // A positive VAT rate is allowed without a registration number.
   await page.goto(`/businesses/${businessId}/settings`);
   await page.getByLabel("Default VAT rate (%)").fill("15");
-  await page
-    .getByRole("button", { name: "Save business", exact: true })
-    .click();
-  await expect(page.locator(".form-error:visible")).toContainText(
-    "VAT registration number",
-  );
-  expect(
-    (await storage(page)).businesses.find(
-      (b: { id: string }) => b.id === businessId,
-    ).taxRate,
-  ).toBe(0);
-  await page.getByLabel("VAT registration number").fill("DEMO-VAT-9999");
   await page
     .getByRole("button", { name: "Save business", exact: true })
     .click();
@@ -178,6 +167,9 @@ test("business creation, editing, customers, catalogue, context switch and archi
       (b: { id: string }) => b.id === businessId,
     ).taxRate,
   ).toBe(15);
+  await page.reload();
+  await expect(page.getByLabel("VAT registration number")).toHaveValue("");
+  await expect(page.getByLabel("Default VAT rate (%)")).toHaveValue("15");
 });
 test("invoice draft, scoped selectors, calculations, persistence, unsaved warning, issue and immutable snapshot", async ({
   page,
@@ -372,7 +364,7 @@ test("empty business: inline customer, business-switch warning and a fresh edito
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
   await expect(
-    page.getByRole("heading", { name: "ME-QUO-0001" }),
+    page.getByRole("heading", { name: "Draft quotation" }),
   ).toBeVisible();
   // The new customer belongs to Moya only.
   const data = await storage(page);
@@ -383,7 +375,7 @@ test("empty business: inline customer, business-switch warning and a fresh edito
   // Starting another quotation opens a blank editor, not the saved one.
   await page.getByRole("link", { name: "Business documents" }).click();
   await page.getByRole("tab", { name: /Quotations/ }).click();
-  await expect(page.locator("tbody:visible")).toContainText("ME-QUO-0001");
+  await expect(page.locator("tbody:visible")).toContainText("Unnumbered draft");
   await page.getByRole("button", { name: "Create document" }).click();
   await page
     .getByRole("dialog")
@@ -391,7 +383,7 @@ test("empty business: inline customer, business-switch warning and a fresh edito
     .selectOption("quotation");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "New quotation" }),
+    page.getByRole("heading", { name: "Draft quotation" }),
   ).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Customer", exact: true }),
@@ -401,64 +393,70 @@ test("empty business: inline customer, business-switch warning and a fresh edito
   await expect(page.getByRole("option")).toHaveCount(2);
   await expect(page.getByRole("option", { name: /Lindiwe/ })).toHaveCount(0);
 });
-test("issued invoices and quotations can be edited and saved under the same number", async ({
+test("issued invoices and quotations create linked, unnumbered draft revisions", async ({
   page,
 }) => {
   await login(page);
-  await page.goto("/documents/green-doc-0");
-  await expect(
-    page.getByRole("heading", { name: "GG-INV-0001", exact: true }),
-  ).toBeVisible();
-  const quantity = page
-    .getByLabel("Quantity", { exact: true })
-    .filter({ visible: true })
-    .first();
-  await expect(quantity).toHaveCount(0);
-  await page.getByRole("button", { name: "Edit invoice" }).click();
-  await quantity.fill("10");
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(
-    page.getByText("Issued and preserved", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "GG-INV-0001", exact: true }),
-  ).toBeVisible();
-  const saved = (await storage(page)).documents.filter(
-    (d: { businessId: string; number: string }) =>
-      d.businessId === "green" && d.number === "GG-INV-0001",
-  );
-  expect(saved).toHaveLength(1);
-  expect(saved[0].status).toBe("issued");
-  expect(saved[0].lines[0].quantity).toBe(10);
-  // Cancelling an edit discards it.
-  await page.getByRole("button", { name: "Edit invoice" }).click();
-  await quantity.fill("99");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Edit invoice" }),
-  ).toBeVisible();
-  const after = (await storage(page)).documents.find(
-    (d: { id: string }) => d.id === "green-doc-0",
-  );
-  expect(after.lines[0].quantity).toBe(10);
-  // Issued quotations can be edited the same way, beside "Convert to invoice".
-  await page.goto("/documents/green-doc-3");
-  await expect(
-    page.getByRole("button", { name: "Convert to invoice" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Edit quotation" }).click();
-  await quantity.fill("7");
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText(/Quotation GG-QUO-0001 updated/)).toBeVisible();
-  const quote = (await storage(page)).documents.find(
-    (d: { id: string }) => d.id === "green-doc-3",
-  );
-  expect(quote.status).toBe("issued");
-  expect(quote.number).toBe("GG-QUO-0001");
-  expect(quote.lines[0].quantity).toBe(7);
+  for (const [kind, id, next] of [
+    ["invoice", "green-doc-0", "GG-INV-0004"],
+    ["quotation", "green-doc-3", "GG-QUO-0002"],
+  ]) {
+    const original = (
+      (await storage(page)).documents || createFixtures().documents
+    ).find((d: { id: string }) => d.id === id);
+    await page.goto(`/documents/${id}`);
+    await page
+      .getByRole("button", { name: `Edit ${kind}`, exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
+    const revisionUrl = page.url();
+    await expect(
+      page.getByRole("heading", { name: `Draft ${kind}`, exact: true }),
+    ).toBeVisible();
+    await page.getByLabel("Quantity", { exact: true }).first().fill("10");
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByLabel("Quantity", { exact: true }).first(),
+    ).toHaveValue("10");
+    const draft = (await storage(page)).documents.find((d: { id: string }) =>
+      revisionUrl.endsWith(d.id),
+    );
+    expect(draft.number).toBe("");
+    expect(draft.revisionOfId).toBe(id);
+    expect(
+      (await storage(page)).documents.find((d: { id: string }) => d.id === id),
+    ).toEqual(original);
+    // Reopening Edit resumes the existing draft instead of creating another.
+    await page.goto(`/documents/${id}`);
+    await page
+      .getByRole("button", { name: `Edit ${kind}`, exact: true })
+      .click();
+    await expect(page).toHaveURL(revisionUrl);
+    await page
+      .getByRole("button", { name: `Issue ${kind}`, exact: true })
+      .click();
+    await page.getByRole("button", { name: "Confirm & issue" }).click();
+    await expect(
+      page.getByRole("heading", { name: next, exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    expect(
+      (await storage(page)).documents.find((d: { id: string }) => d.id === id),
+    ).toEqual(original);
+    await page
+      .getByRole("link", { name: original.number, exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: original.number, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: next, exact: true }),
+    ).toBeVisible();
+  }
 });
-test("businesses without prefixes, and invoices that continue from a chosen number", async ({
+test("drafts without prefixes receive numbers only when issued", async ({
   page,
 }) => {
   await login(page);
@@ -469,32 +467,28 @@ test("businesses without prefixes, and invoices that continue from a chosen numb
     .getByRole("button", { name: "Save business", exact: true })
     .click();
   await expect(page.getByText("Business profile saved.")).toBeVisible();
-  await page.goto("/businesses/glen/documents/new?kind=invoice");
-  const number = page
-    .getByLabel("Invoice number", { exact: true })
-    .filter({ visible: true });
-  // Glen Zamba's invoices end at 0003; without a prefix the next is 0004.
-  await expect(number).toHaveValue("0004");
-  await number.fill("0123");
-  await pickCustomer(page, "Mahlangu Property Group");
-  await page.getByRole("button", { name: "Add custom line" }).click();
-  await page.getByLabel("Line 1 name").fill("Existing work");
-  await page.getByLabel("Unit price (R)").fill("100");
-  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  for (let i = 0; i < 2; i++) {
+    await page.goto("/businesses/glen/documents/new?kind=invoice");
+    await expect(
+      page.getByLabel("Invoice number", { exact: true }),
+    ).toHaveValue("0004");
+    await pickCustomer(page, "Mahlangu Property Group");
+    await page.getByRole("button", { name: "Add custom line" }).click();
+    await page.getByLabel("Line 1 name").fill("Work");
+    await page.getByLabel("Unit price (R)").fill("100");
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
+    await expect(
+      page.getByRole("heading", { name: "Draft invoice", exact: true }),
+    ).toBeVisible();
+  }
+  await page
+    .getByRole("button", { name: "Issue invoice", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Confirm & issue" }).click();
   await expect(
-    page.getByRole("heading", { name: "0123", exact: true }),
+    page.getByRole("heading", { name: "0004", exact: true }),
   ).toBeVisible();
-  // Another document cannot reuse the number; the next one follows on.
-  await page.goto("/businesses/glen/documents/new?kind=invoice");
-  await expect(number).toHaveValue("0124");
-  await number.fill("0123");
-  await pickCustomer(page, "Mahlangu Property Group");
-  await page.getByRole("button", { name: "Add custom line" }).click();
-  await page.getByLabel("Line 1 name").fill("Duplicate");
-  await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(page.locator(".form-error:visible")).toContainText(
-    "Invoice number 0123 is already used",
-  );
 });
 test("short and multipage PDF downloads contain real PDF data", async ({
   page,
@@ -596,4 +590,85 @@ test("failed saves and malformed records preserve data; responsive layouts have 
   expect(
     await page.evaluate(() => localStorage.getItem("africonnect-invoicing:v1")),
   ).toBe("{malformed");
+});
+
+test("discounts balance on new and edited invoices/quotations, previews, PDFs and conversion", async ({
+  page,
+}) => {
+  // Previous routes stay mounted (hidden), so match only the visible field.
+  const discount = () =>
+    page.getByRole("spinbutton", { name: "Discount amount (R)" });
+  await login(page);
+  for (const kind of ["invoice", "quotation"]) {
+    await page.goto(`/businesses/glen/documents/new?kind=${kind}`);
+    await pickCustomer(page, "Mahlangu Property Group");
+    await page.getByRole("button", { name: "Add custom line" }).click();
+    await page.getByLabel("Line 1 name").fill("Discounted project");
+    await page.getByLabel("Unit price (R)").fill("1000");
+    await discount().fill("100");
+    await expect(page.locator(".summary-total:visible")).toContainText(
+      "1 035,00",
+    );
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
+    const url = page.url();
+    await page.reload();
+    await expect(discount()).toHaveValue("100");
+    await discount().fill("1001");
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page.locator(".form-error:visible")).toContainText(
+      "cannot exceed the subtotal",
+    );
+    await discount().fill("200");
+    await page
+      .getByRole("button", { name: `Issue ${kind}`, exact: true })
+      .click();
+    await page.getByRole("button", { name: "Confirm & issue" }).click();
+    await expect(
+      page.locator(".document-paper:visible .paper-totals"),
+    ).toContainText("920,00");
+    const issuedUrl = page.url();
+    await page
+      .getByRole("button", { name: `Edit ${kind}`, exact: true })
+      .click();
+    // Editing an issued document opens a separate draft revision.
+    await expect(page).not.toHaveURL(issuedUrl);
+    await expect(
+      page.getByRole("heading", { name: `Draft ${kind}`, exact: true }),
+    ).toBeVisible();
+    await discount().fill("250");
+    await page
+      .getByRole("button", { name: `Issue ${kind}`, exact: true })
+      .click();
+    await page.getByRole("button", { name: "Confirm & issue" }).click();
+    const totals = page.locator(".document-paper:visible .paper-totals");
+    await expect(totals).toContainText("Discount");
+    await expect(totals).toContainText("250,00");
+    await expect(totals).toContainText("112,50");
+    await expect(totals).toContainText("862,50");
+    const downloadEvent = page.waitForEvent("download");
+    await page
+      .getByRole("button", { name: "Download PDF", exact: true })
+      .click();
+    await (await downloadEvent).saveAs(`test-results/discount-${kind}.pdf`);
+    await page.reload();
+    await expect(totals).toContainText("862,50");
+    // The issued original keeps its own discount and total.
+    await page.goto(issuedUrl);
+    await expect(
+      page.locator(".document-paper:visible .paper-totals"),
+    ).toContainText("920,00");
+    await page.goBack();
+    await expect(totals).toContainText("862,50");
+    if (kind === "quotation") {
+      await page
+        .getByRole("button", { name: "Convert to invoice", exact: true })
+        .click();
+      await expect(page).not.toHaveURL(url);
+      await expect(discount()).toHaveValue("250");
+      await expect(page.locator(".summary-total:visible")).toContainText(
+        "862,50",
+      );
+    }
+  }
 });

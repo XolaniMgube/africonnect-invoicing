@@ -80,9 +80,11 @@ const schema = z.object({
       terms: str,
       notes: str,
       taxRate: num,
+      discountAmount: num.min(0).default(0),
       lines: z.array(lineSchema),
       snapshot: z.object({ issuer: businessSchema, customer: customerSchema }),
       totals: z.object({ subtotal: num, tax: num, total: num }),
+      revisionOfId: str.optional(),
       sourceQuotationId: str.optional(),
       sourceQuotationNumber: str.optional(),
       linkedInvoiceId: str.optional(),
@@ -108,6 +110,18 @@ export function parseDatabase(raw: string): Database {
     if (!businesses.has(r.businessId))
       throw new Error("Missing business relationship.");
   for (const doc of data.documents) {
+    if (doc.status === "draft") doc.number = "";
+    if (
+      doc.revisionOfId &&
+      !data.documents.some(
+        (d) =>
+          d.id === doc.revisionOfId &&
+          d.status === "issued" &&
+          d.businessId === doc.businessId &&
+          d.kind === doc.kind,
+      )
+    )
+      throw new Error("Invalid revision relationship.");
     if (
       !data.customers.some(
         (c) => c.id === doc.customerId && c.businessId === doc.businessId,
