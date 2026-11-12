@@ -1,4 +1,5 @@
 import type { Business } from "./types";
+import { DOCUMENT_TEMPLATES } from "./templates";
 
 /** Empty (plain numbers such as 0001) or 1–12 letters, numbers and hyphens. */
 const PREFIX = /^([A-Za-z0-9][A-Za-z0-9-]{0,11})?$/;
@@ -37,5 +38,16 @@ export function validateBusiness(business: Business): string[] {
     errors.push("Default VAT rate must be between 0 and 100.");
   if (!/^#[a-f\d]{6}$/i.test(business.accent))
     errors.push("Choose a valid document accent colour.");
+  if (!DOCUMENT_TEMPLATES.some((t) => t.id === business.template))
+    errors.push("Choose a document template.");
+  if (!/^#[a-f\d]{6}$/i.test(business.secondaryAccent))
+    errors.push("Choose a valid second document colour.");
+  if (business.closingMessage.length > 80)
+    errors.push("Keep the closing message to 80 characters or fewer.");
+  for (const [label, value] of [
+    ["Signatory name", business.signatoryName],
+    ["Signatory title", business.signatoryTitle],
+  ])
+    if (value.length > 60) errors.push(`${label}: use 60 characters or fewer.`);
   return errors;
 }

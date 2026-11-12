@@ -33,6 +33,8 @@ import {
 import { LOGO_MAX_BYTES } from "@/data/errors";
 import { validateBusiness } from "@/domain/businesses";
 import type { Business } from "@/domain/types";
+import { DESIGN_DEFAULTS } from "@/domain/templates";
+import { TemplateFields } from "./template-picker";
 import { CreateDocument, DocumentList } from "./document-list";
 export const newBusiness = (): Business => ({
   id: crypto.randomUUID(),
@@ -40,6 +42,7 @@ export const newBusiness = (): Business => ({
   industry: "",
   logo: "",
   accent: "#286044",
+  ...DESIGN_DEFAULTS,
   email: "",
   phone: "",
   address: "",
@@ -428,16 +431,6 @@ export function BusinessForm({
               onChange={(e) => update("taxRate", Number(e.target.value))}
             />
           </Field>
-          <Field label="Document accent colour">
-            <div className="color-field">
-              <input
-                type="color"
-                value={form.accent}
-                onChange={(e) => update("accent", e.target.value)}
-              />
-              <span>{form.accent.toUpperCase()}</span>
-            </div>
-          </Field>
         </div>
         <Field label="Default document notes">
           <textarea
@@ -447,6 +440,7 @@ export function BusinessForm({
           />
         </Field>
       </div>
+      <TemplateFields form={form} update={update} />
       {errors.length > 0 && (
         <div className="form-error" role="alert">
           <strong>Please check these details</strong>
@@ -516,11 +510,8 @@ export function BusinessWorkspace() {
           <Link href={`/businesses/${b.id}/items`}>
             <Package size={20} />
             <strong>
-              {
-                db.items.filter((i) => i.businessId === b.id && !i.archived)
-                  .length
-              }{" "}
-              items & services
+              {db.items.filter((i) => i.businessId === b.id).length} items &
+              services
             </strong>
             <ArrowUpRight size={16} />
           </Link>

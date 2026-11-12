@@ -17,6 +17,7 @@ import {
   loadDatabase,
   parseDatabase,
   persistDatabase,
+  removeRecord,
   STORAGE_KEY,
   upsertBusiness,
   upsertRecord,
@@ -29,8 +30,11 @@ import {
   documentToRow,
   itemToRow,
   linkConversions,
+  rowToBusiness,
+  rowToDocument,
   rowsToDatabase,
 } from "../src/data/rows";
+import { DESIGN_DEFAULTS, templateOf } from "../src/domain/templates";
 import { merge } from "../src/data/store";
 import {
   databaseMessage,
@@ -226,6 +230,113 @@ test("archives preserve history and block new or edited work until restored", ()
   assert.throws(() => upsertRecord(db, "items", db.items[0]), /Restore/);
   db = upsertBusiness(db, { ...db.businesses[0], archived: false });
   assert.doesNotThrow(() => saveDocument(db, draft));
+});
+test("customers and items can be deleted; customers used by documents are kept", () => {
+  const db = createFixtures();
+  const item = db.items.find((i) => i.businessId === "glen")!;
+  const usedLine = db.documents.find((d) =>
+    d.lines.some((l) => l.referenceId === item.id),
+  )!;
+  const withoutItem = removeRecord(db, "items", item.id);
+  assert.equal(withoutItem.items.length, db.items.length - 1);
+  // Lines copy item details, so documents are unchanged and still load.
+  assert.deepEqual(withoutItem.documents, db.documents);
+  assert.ok(usedLine);
+  assert.doesNotThrow(() => parseDatabase(JSON.stringify(withoutItem)));
+  // A customer with documents (draft or issued) cannot be deleted.
+  const used = db.customers.find((c) =>
+    db.documents.some((d) => d.customerId === c.id),
+  )!;
+  assert.throws(
+    () => removeRecord(db, "customers", used.id),
+    /can’t be deleted because .* invoices or quotations use this customer/,
+  );
+  const unused = { ...used, id: "unused-customer", name: "Unused" };
+  const added = upsertRecord(db, "customers", unused);
+  const withoutCustomer = removeRecord(added, "customers", unused.id);
+  assert.deepEqual(withoutCustomer.customers, db.customers);
+  assert.throws(() => removeRecord(db, "items", "missing"), /no longer exists/);
+  const archived = upsertBusiness(db, { ...db.businesses[0], archived: true });
+  assert.throws(() => removeRecord(archived, "items", item.id), /Restore/);
+});
+test("items saved before archiving was removed still load", () => {
+  const db = createFixtures();
+  const legacy = JSON.parse(JSON.stringify(db));
+  legacy.items[0].archived = true;
+  const loaded = parseDatabase(JSON.stringify(legacy));
+  assert.deepEqual(loaded.items, db.items);
+});
+test("document templates: defaults for older records, validation and snapshots", () => {
+  const db = createFixtures();
+  const legacy = JSON.parse(JSON.stringify(db));
+  for (const b of legacy.businesses)
+    for (const key of Object.keys(DESIGN_DEFAULTS)) delete b[key];
+  for (const d of legacy.documents)
+    for (const key of Object.keys(DESIGN_DEFAULTS))
+      delete d.snapshot.issuer[key];
+  const loaded = parseDatabase(JSON.stringify(legacy));
+  assert.equal(loaded.businesses[0].template, "classic");
+  assert.equal(loaded.businesses[0].secondaryAccent, "#C9A45C");
+  assert.equal(
+    loaded.businesses[0].closingMessage,
+    "Thank you for your service!",
+  );
+  assert.equal(loaded.documents[0].snapshot.issuer.template, "classic");
+  // Supabase rows and snapshots saved before the templates migration.
+  const row = businessToRow(db.businesses[0]) as Record<string, unknown>;
+  for (const key of [
+    "template",
+    "secondary_accent",
+    "signatory_name",
+    "signatory_title",
+    "closing_message",
+  ])
+    delete row[key];
+  assert.deepEqual(rowToBusiness(row as never), {
+    ...db.businesses[0],
+    ...DESIGN_DEFAULTS,
+  });
+  const docRow = documentToRow(db.documents[0]);
+  const issuer = docRow.snapshot.issuer as Partial<
+    typeof docRow.snapshot.issuer
+  >;
+  delete issuer.template;
+  delete issuer.secondaryAccent;
+  assert.equal(rowToDocument(docRow).snapshot.issuer.template, "classic");
+  assert.equal(templateOf({ template: "unknown" as never }), "classic");
+
+  const executive = {
+    ...db.businesses[0],
+    template: "executive" as const,
+    signatoryName: "T. Example",
+  };
+  assert.deepEqual(validateBusiness(executive), []);
+  assert.deepEqual(
+    validateBusiness({
+      ...executive,
+      template: "fancy" as never,
+      secondaryAccent: "gold",
+      closingMessage: "x".repeat(81),
+      signatoryTitle: "y".repeat(61),
+    }),
+    [
+      "Choose a document template.",
+      "Choose a valid second document colour.",
+      "Keep the closing message to 80 characters or fewer.",
+      "Signatory title: use 60 characters or fewer.",
+    ],
+  );
+  // Issuing copies the template; changing the business later doesn't alter it.
+  let next = upsertBusiness(db, executive);
+  const draft = next.documents.find(
+    (d) => d.status === "draft" && d.businessId === executive.id,
+  )!;
+  next = saveDocument(next, draft, true);
+  next = upsertBusiness(next, { ...executive, template: "classic" });
+  assert.equal(
+    next.documents.find((d) => d.id === draft.id)!.snapshot.issuer.template,
+    "executive",
+  );
 });
 test("invalid dates, prices, quantities, tax and missing issuer details are rejected", () => {
   const db = createFixtures();

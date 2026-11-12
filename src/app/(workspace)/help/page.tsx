@@ -16,7 +16,7 @@ export default function Page() {
             Building2,
             "01",
             "Choose the issuing business",
-            "Open a client business from the overview. Its identity, banking details and document defaults will be used.",
+            "Open a client business from the overview. Its identity, banking details and document defaults will be used. Choose its document template in its settings; the Templates page previews every design.",
           ],
           [
             Users,
@@ -88,10 +88,12 @@ export default function Page() {
             <p>
               Records are saved in Africonnect’s shared database, so every
               employee who signs in sees the same businesses, customers and
-              documents. Records are archived, never deleted. Issued invoices
-              and quotations keep their number when edited, and can’t go back to
-              being drafts. Business logos can be opened by anyone who has their
-              link, because they are printed on documents.
+              documents. Businesses are archived, never deleted. Customers and
+              items can be deleted, except customers used on an invoice or
+              quotation. Issued invoices and quotations are never changed:
+              editing one creates a draft revision that gets a new number when
+              issued. Business logos can be opened by anyone who has their link,
+              because they are printed on documents.
             </p>
             <p>
               If you leave this tab and come back after a while, it reloads the

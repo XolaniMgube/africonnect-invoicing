@@ -2,15 +2,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import {
-  Plus,
-  Pencil,
-  Archive,
-  RotateCcw,
-  Users,
-  Package,
-  ArrowLeft,
-} from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Package, ArrowLeft } from "lucide-react";
 import { useData } from "@/components/provider";
 import {
   Button,
@@ -19,7 +11,6 @@ import {
   Modal,
   PageHeading,
   SearchBox,
-  Badge,
 } from "@/components/ui";
 import {
   useUnsavedChanges,
@@ -41,13 +32,12 @@ export const blankCustomer = (businessId: string): Customer => ({
 });
 export function Records({ kind }: { kind: "customers" | "items" }) {
   const { businessId } = useParams<{ businessId: string }>();
-  const { db, setItemArchived } = useData();
-  const [archiving, setArchiving] = useState(false);
+  const { db, deleteCustomer, deleteItem } = useData();
+  const [deleting, setDeleting] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
   const [editing, setEditing] = useState<Customer | ReferenceItem | null>(null);
-  const [archive, setArchive] = useState<ReferenceItem | null>(null);
+  const [remove, setRemove] = useState<Customer | ReferenceItem | null>(null);
   const b = db?.businesses.find((b) => b.id === businessId);
   if (!b || !db)
     return (
@@ -57,6 +47,11 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
       />
     );
   const isCustomers = kind === "customers";
+  // Documents keep their customer, so a customer in use cannot be deleted.
+  const inUse =
+    isCustomers && remove
+      ? db.documents.filter((d) => d.customerId === remove.id).length
+      : 0;
   const records = isCustomers
     ? db.customers.filter(
         (c) =>
@@ -68,7 +63,6 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
     : db.items.filter(
         (i) =>
           i.businessId === b.id &&
-          (showArchived || !i.archived) &&
           (!category || i.category === category) &&
           `${i.name} ${i.description} ${i.category}`
             .toLowerCase()
@@ -86,7 +80,6 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
             category: "",
             unit: "Item",
             price: 0,
-            archived: false,
           },
     );
   }
@@ -121,34 +114,24 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
             }
           />
           {!isCustomers && (
-            <>
-              <select
-                aria-label="Filter category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              >
-                <option value="">All categories</option>
-                {[
-                  ...new Set(
-                    db.items
-                      .filter((i) => i.businessId === b.id)
-                      .map((i) => i.category),
-                  ),
-                ]
-                  .filter(Boolean)
-                  .map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-              </select>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={showArchived}
-                  onChange={(e) => setShowArchived(e.target.checked)}
-                />
-                Include archived
-              </label>
-            </>
+            <select
+              aria-label="Filter category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {[
+                ...new Set(
+                  db.items
+                    .filter((i) => i.businessId === b.id)
+                    .map((i) => i.category),
+                ),
+              ]
+                .filter(Boolean)
+                .map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+            </select>
           )}
         </div>
         {records.length ? (
@@ -159,7 +142,7 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
                   <th>{isCustomers ? "Customer" : "Item / service"}</th>
                   <th>{isCustomers ? "Email" : "Category"}</th>
                   <th>{isCustomers ? "Phone" : "Default price"}</th>
-                  <th>{isCustomers ? "Billing address" : "Unit / status"}</th>
+                  <th>{isCustomers ? "Billing address" : "Unit"}</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -193,14 +176,7 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
                       data-label={isCustomers ? "Billing address" : "Unit"}
                       className={isCustomers ? "preserve-lines" : ""}
                     >
-                      {"address" in r ? (
-                        r.address || "—"
-                      ) : (
-                        <>
-                          {r.unit}
-                          {r.archived && <Badge status="archived" />}
-                        </>
-                      )}
+                      {"address" in r ? r.address || "—" : r.unit}
                     </td>
                     <td className="cell-actions">
                       <div className="actions">
@@ -212,20 +188,14 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
                         >
                           <Pencil size={17} />
                         </button>
-                        {"archived" in r && (
-                          <button
-                            className="icon-btn"
-                            disabled={b.archived}
-                            aria-label={`${r.archived ? "Restore" : "Archive"} ${r.name}`}
-                            onClick={() => setArchive(r)}
-                          >
-                            {r.archived ? (
-                              <RotateCcw size={17} />
-                            ) : (
-                              <Archive size={17} />
-                            )}
-                          </button>
-                        )}
+                        <button
+                          className="icon-btn"
+                          disabled={b.archived}
+                          aria-label={`Delete ${r.name}`}
+                          onClick={() => setRemove(r)}
+                        >
+                          <Trash2 size={17} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -273,32 +243,44 @@ export function Records({ kind }: { kind: "customers" | "items" }) {
         )}
       </Modal>
       <Modal
-        open={!!archive}
-        onOpenChange={() => setArchive(null)}
-        title={`${archive?.archived ? "Restore" : "Archive"} item?`}
-        description="Existing document lines will stay unchanged."
+        open={!!remove}
+        onOpenChange={() => setRemove(null)}
+        title={`Delete ${isCustomers ? "customer" : "item"}?`}
+        description={
+          inUse
+            ? "Customers used on invoices or quotations are kept so those documents stay complete."
+            : isCustomers
+              ? "This can’t be undone."
+              : "This can’t be undone. Invoices and quotations that already use it keep their lines unchanged."
+        }
       >
-        <p>{archive?.name}</p>
+        <p>
+          {inUse
+            ? `${remove?.name} is used on ${inUse === 1 ? "1 invoice or quotation" : `${inUse} invoices or quotations`} and can’t be deleted.`
+            : remove?.name}
+        </p>
         <div className="dialog-actions">
-          <Button variant="secondary" onClick={() => setArchive(null)}>
-            Cancel
+          <Button variant="secondary" onClick={() => setRemove(null)}>
+            {inUse ? "Close" : "Cancel"}
           </Button>
-          <Button
-            disabled={archiving}
-            onClick={async () => {
-              if (!archive) return;
-              setArchiving(true);
-              const saved = await setItemArchived(
-                archive.id,
-                !archive.archived,
-                archive.archived ? "Item restored." : "Item archived.",
-              );
-              setArchiving(false);
-              if (saved) setArchive(null);
-            }}
-          >
-            {archive?.archived ? "Restore" : "Archive"}
-          </Button>
+          {!inUse && (
+            <Button
+              variant="danger"
+              disabled={deleting}
+              onClick={async () => {
+                if (!remove) return;
+                setDeleting(true);
+                const deleted = isCustomers
+                  ? await deleteCustomer(remove.id, "Customer deleted.")
+                  : await deleteItem(remove.id, "Item deleted.");
+                setDeleting(false);
+                if (deleted) setRemove(null);
+              }}
+            >
+              <Trash2 size={16} />
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          )}
         </div>
       </Modal>
     </>

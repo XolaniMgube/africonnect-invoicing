@@ -6,6 +6,7 @@ import type { Store } from "./store";
 import {
   loadDatabase,
   persistDatabase,
+  removeRecord,
   upsertBusiness,
   upsertRecord,
 } from "./repository";
@@ -62,13 +63,11 @@ export function createLocalStore(): Store {
       );
       return found(next.items, item.id);
     },
-    async setItemArchived(db, id, archived) {
-      const current = found(db.items, id);
-      const next = persistDatabase(
-        localStorage,
-        upsertRecord(db, "items", { ...current, archived }),
-      );
-      return found(next.items, id);
+    async deleteCustomer(db, id) {
+      persistDatabase(localStorage, removeRecord(db, "customers", id));
+    },
+    async deleteItem(db, id) {
+      persistDatabase(localStorage, removeRecord(db, "items", id));
     },
     async saveDocument(db, doc, issue) {
       const next = persistDatabase(localStorage, saveDocument(db, doc, issue));

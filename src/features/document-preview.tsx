@@ -2,12 +2,23 @@ import type { BusinessDocument } from "@/domain/types";
 import { calculate, dateLabel, money } from "@/domain/documents";
 import Image from "next/image";
 import { BusinessMark } from "@/components/ui";
+import { templateOf } from "@/domain/templates";
+import { ExecutivePreview } from "./preview-executive";
+
+/** On-screen rendering of a document in its issuer's template. */
+export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
+  return templateOf(doc.snapshot.issuer) === "executive" ? (
+    <ExecutivePreview doc={doc} />
+  ) : (
+    <ClassicPreview doc={doc} />
+  );
+}
 
 /**
- * On-screen rendering of a document. It mirrors the PDF template in
+ * The Classic template on screen. It mirrors `ClassicPDF` in
  * `src/pdf/document-pdf.tsx`: same data, labels, sections and calculations.
  */
-export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
+function ClassicPreview({ doc }: { doc: BusinessDocument }) {
   const { issuer, customer } = doc.snapshot;
   const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   const invoice = doc.kind === "invoice";

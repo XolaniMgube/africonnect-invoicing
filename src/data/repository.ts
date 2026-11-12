@@ -7,6 +7,7 @@ import type {
 } from "../domain/types";
 import { createFixtures } from "./fixtures";
 import { validateBusiness } from "../domain/businesses";
+import { DESIGN_DEFAULTS } from "../domain/templates";
 const str = z.string();
 const num = z.number().finite();
 const businessSchema = z.object({
@@ -25,6 +26,18 @@ const businessSchema = z.object({
   archived: z.boolean(),
   logo: str,
   accent: str.regex(/^#[a-f\d]{6}$/i),
+  // Design fields arrived later: older saved records get the defaults.
+  template: z
+    .enum(["classic", "executive"])
+    .catch(DESIGN_DEFAULTS.template)
+    .default(DESIGN_DEFAULTS.template),
+  secondaryAccent: str
+    .regex(/^#[a-f\d]{6}$/i)
+    .catch(DESIGN_DEFAULTS.secondaryAccent)
+    .default(DESIGN_DEFAULTS.secondaryAccent),
+  signatoryName: str.default(""),
+  signatoryTitle: str.default(""),
+  closingMessage: str.default(DESIGN_DEFAULTS.closingMessage),
   invoicePrefix: str,
   quotationPrefix: str,
   paymentDays: num.int().min(0).max(365),
@@ -51,7 +64,6 @@ const itemSchema = z.object({
   category: str,
   unit: str,
   price: num.min(0).max(1e9),
-  archived: z.boolean(),
 });
 const lineSchema = z.object({
   id: str,
@@ -203,4 +215,36 @@ export function upsertRecord(
   if (i < 0) records.push(record);
   else records[i] = record;
   return next;
+}
+/** Why a customer cannot be deleted: documents still use it. */
+export function customerInUse(name: string, count?: number) {
+  const use =
+    count === undefined
+      ? "invoices or quotations use"
+      : count === 1
+        ? "an invoice or quotation uses"
+        : `${count} invoices or quotations use`;
+  return `${name} can’t be deleted because ${use} this customer. Nothing was deleted.`;
+}
+/**
+ * Deletes a customer or reference item. A customer used by any invoice or
+ * quotation (draft or issued) is kept. Document lines copy item details, so
+ * deleting an item never changes a document.
+ */
+export function removeRecord(
+  db: Database,
+  collection: "customers" | "items",
+  id: string,
+): Database {
+  const records = db[collection] as (Customer | ReferenceItem)[];
+  const record = records.find((r) => r.id === id);
+  if (!record) throw new Error("This record no longer exists.");
+  const b = db.businesses.find((b) => b.id === record.businessId);
+  if (!b || b.archived)
+    throw new Error("Restore this business before editing its records.");
+  if (collection === "customers") {
+    const used = db.documents.filter((d) => d.customerId === id).length;
+    if (used) throw new Error(customerInUse(record.name, used));
+  }
+  return { ...db, [collection]: records.filter((r) => r.id !== id) };
 }

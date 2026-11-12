@@ -3,9 +3,11 @@
  * Supabase table rows (snake_case, see `supabase/migrations`). Pure and
  * framework-free so it can be unit-tested and reused by the seed generator.
  */
+import { withDesignDefaults } from "../domain/templates";
 import type {
   Business,
   BusinessDocument,
+  DocumentTemplate,
   Customer,
   Database,
   ReferenceItem,
@@ -33,6 +35,11 @@ export type BusinessRow = {
   notes: string;
   tax_rate: number;
   archived: boolean;
+  template: string;
+  secondary_accent: string;
+  signatory_name: string;
+  signatory_title: string;
+  closing_message: string;
 };
 
 export type CustomerRow = {
@@ -55,7 +62,6 @@ export type ItemRow = {
   category: string;
   unit: string;
   price: number;
-  archived: boolean;
 };
 
 export type DocumentRow = {
@@ -108,6 +114,11 @@ export const businessToRow = (b: Business): BusinessRow => ({
   notes: b.notes,
   tax_rate: b.taxRate,
   archived: b.archived,
+  template: b.template,
+  secondary_accent: b.secondaryAccent,
+  signatory_name: b.signatoryName,
+  signatory_title: b.signatoryTitle,
+  closing_message: b.closingMessage,
 });
 
 export const rowToBusiness = (r: BusinessRow): Business => ({
@@ -132,6 +143,13 @@ export const rowToBusiness = (r: BusinessRow): Business => ({
   notes: s(r.notes),
   taxRate: n(r.tax_rate),
   archived: Boolean(r.archived),
+  ...withDesignDefaults({
+    template: r.template as DocumentTemplate,
+    secondaryAccent: r.secondary_accent ?? undefined,
+    signatoryName: r.signatory_name ?? undefined,
+    signatoryTitle: r.signatory_title ?? undefined,
+    closingMessage: r.closing_message ?? undefined,
+  }),
 });
 
 export const customerToRow = (c: Customer): CustomerRow => ({
@@ -166,7 +184,6 @@ export const itemToRow = (i: ReferenceItem): ItemRow => ({
   category: i.category,
   unit: i.unit,
   price: i.price,
-  archived: i.archived,
 });
 
 export const rowToItem = (r: ItemRow): ReferenceItem => ({
@@ -177,7 +194,6 @@ export const rowToItem = (r: ItemRow): ReferenceItem => ({
   category: s(r.category),
   unit: s(r.unit),
   price: n(r.price),
-  archived: Boolean(r.archived),
 });
 
 export const documentToRow = (d: BusinessDocument): DocumentRow => ({
@@ -223,7 +239,11 @@ export function rowToDocument(r: DocumentRow): BusinessDocument {
       quantity: n(l.quantity),
       price: n(l.price),
     })),
-    snapshot: r.snapshot,
+    // Snapshots issued before templates existed get the default design.
+    snapshot: {
+      ...r.snapshot,
+      issuer: withDesignDefaults(r.snapshot.issuer),
+    },
     totals: { subtotal: n(r.subtotal), tax: n(r.tax), total: n(r.total) },
     updatedAt: s(r.updated_at),
   };

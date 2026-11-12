@@ -2,6 +2,14 @@
 
 ## 2026-11-12
 
+- Executive template PDFs: the Contact Us block now appears once, on the last page (with the signature), instead of on every page of a multipage document.
+
+- Added a **Templates** page to the sidebar: browse the templates with usage counts, preview each as an invoice or quotation with fictional sample details, and download a sample PDF. Each business still chooses its template, colours and signature in its settings.
+
+- Added document templates. Each business chooses one in its add/edit form, with a **Preview design** sample: **Classic** (unchanged) or the new **Executive** design, which uses two colours, rounded table header and total, a payment card, a closing message, a Contact Us footer, a handwritten-style signature (signatory name and title) and a striped bottom band. Issued documents keep the template they were issued with. Bundled Poppins and Kristi fonts (OFL). Apply `20261112160000_document_templates.sql` to Supabase.
+
+- Customers and items & services can be deleted (with confirmation). Customers used by any invoice or quotation are kept so those documents stay complete; deleting an item leaves existing document lines unchanged. Item archiving is removed: previously archived items reappear in the catalogue. Apply `20261112150000_delete_customers_items.sql` to Supabase together with deploying this version.
+
 - Drafts are unnumbered until issue. Editing issued invoices or quotations creates linked draft revisions, preserving the original and assigning the next number when the revision is issued. Added database enforcement and migration, with domain and browser coverage.
 
 - Added fixed rand discounts to invoice/quotation creation and editing, saved records, quotation conversion, previews and PDFs. VAT is calculated after the discount; amounts outside zero–subtotal are rejected. Added `20261112130000_document_discounts.sql` for Supabase.

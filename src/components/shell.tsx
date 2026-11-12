@@ -15,6 +15,7 @@ import {
   Package,
   Settings2,
   ChevronsUpDown,
+  LayoutTemplate,
 } from "lucide-react";
 import { hasVisibleUnsavedChanges } from "./unsaved";
 import { useData } from "./provider";
@@ -95,6 +96,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const section = path.split("/")[3];
   const crumbs: Crumb[] = [{ label: "Workspace", href: "/overview" }];
   if (path === "/overview") crumbs.push({ label: "Overview" });
+  else if (path === "/templates") crumbs.push({ label: "Templates" });
   else if (path === "/help")
     crumbs.push({ label: local ? "Help & demo guide" : "Help" });
   else if (path.startsWith("/businesses") || openDoc) {
@@ -146,6 +148,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span className="nav-count">
             {db?.businesses.filter((b) => !b.archived).length || 0}
           </span>
+        </NavLink>
+        <NavLink
+          href="/templates"
+          active={path === "/templates"}
+          onNavigate={close}
+        >
+          <LayoutTemplate size={19} />
+          <span>Templates</span>
         </NavLink>
         {business && (
           <>

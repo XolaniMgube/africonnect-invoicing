@@ -3,7 +3,7 @@
 -- that is rolled back, so no test data is left behind.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(46);
+select plan(55);
 
 -- People: one employee, one signed-in user who is not an employee.
 insert into auth.users (id, email) values
@@ -59,6 +59,19 @@ select throws_ok(
   $$insert into public.businesses (name, email, address, invoice_prefix, quotation_prefix)
     values ('Same prefixes', 'a@b.c', 'Here', 'DOC', 'doc')$$,
   '23514', null, 'invoice and quotation prefixes must differ');
+select is(
+  (select template || ' ' || secondary_accent from public.businesses
+   where id = '10000000-0000-4000-8000-000000000001'),
+  'classic #C9A45C', 'businesses start with the Classic template');
+select lives_ok(
+  $$update public.businesses
+    set template = 'executive', signatory_name = 'T. Example', closing_message = 'Thanks!'
+    where id = '10000000-0000-4000-8000-000000000002'$$,
+  'a business can switch to the Executive template');
+select throws_ok(
+  $$update public.businesses set template = 'fancy'
+    where id = '10000000-0000-4000-8000-000000000002'$$,
+  '23514', null, 'only known templates are accepted');
 
 insert into public.customers (id, business_id, name) values
   ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'Customer A'),
@@ -147,6 +160,36 @@ select throws_ok(
   $$delete from public.businesses where id = '10000000-0000-4000-8000-000000000002'$$,
   '42501', null, 'businesses cannot be deleted');
 
+-- Customers and items can be deleted, unless a document uses the customer.
+insert into public.customers (id, business_id, name) values
+  ('20000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000001', 'Unused customer');
+insert into public.items (id, business_id, name) values
+  ('40000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'Old item'),
+  ('40000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000001', 'Frozen item');
+select throws_ok(
+  $$delete from public.customers where id = '20000000-0000-4000-8000-000000000001'$$,
+  '23503', null, 'a customer used by documents cannot be deleted');
+-- A signed-in non-employee deletes nothing.
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000002","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000002';
+delete from public.customers where id = '20000000-0000-4000-8000-000000000003';
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select ok(
+  exists(select 1 from public.customers where id = '20000000-0000-4000-8000-000000000003'),
+  'non-employees cannot delete customers');
+select lives_ok(
+  $$delete from public.customers where id = '20000000-0000-4000-8000-000000000003'$$,
+  'employees can delete an unused customer');
+select lives_ok(
+  $$delete from public.items where id = '40000000-0000-4000-8000-000000000001'$$,
+  'employees can delete items');
+select is(
+  (select count(*)::int from public.customers c, public.items i
+   where c.id = '20000000-0000-4000-8000-000000000003'
+      or i.id = '40000000-0000-4000-8000-000000000001'),
+  0, 'deleted customers and items are gone');
+
 -- Conversion: only from an issued quotation, and only once.
 select throws_ok(
   $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000004', 'invoice',
@@ -193,6 +236,10 @@ select throws_ok(
   $$update public.documents set notes = 'x' where id = '30000000-0000-4000-8000-000000000002'$$,
   'P0001', 'Restore this business before creating or editing documents.',
   'drafts of archived businesses cannot change');
+select throws_ok(
+  $$delete from public.items where id = '40000000-0000-4000-8000-000000000002'$$,
+  'P0001', 'Restore this business before editing its records.',
+  'items of archived businesses cannot be deleted');
 update public.businesses set archived = false
   where id = '10000000-0000-4000-8000-000000000001';
 select lives_ok(

@@ -139,7 +139,6 @@ function Editor({
   const items = db.items.filter(
     (i) =>
       i.businessId === business.id &&
-      !i.archived &&
       `${i.name} ${i.description} ${i.category}`
         .toLowerCase()
         .includes(query.toLowerCase()),

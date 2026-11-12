@@ -3180,3 +3180,465 @@ th {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* ───────────── Document templates ───────────── */
+
+/* Bundled (SIL Open Font License); the PDF embeds the same files. */
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Kristi";
+  src: url("/fonts/Kristi-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+.template-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.template-option {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid #dce3d8;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+/* The global input width rule would otherwise widen the visually hidden radio. */
+.template-option {
+  position: relative;
+}
+.template-option input.sr-only {
+  width: 1px;
+  height: 1px;
+}
+.template-option.selected {
+  border-color: var(--green, #286044);
+  box-shadow: 0 0 0 2px #28604433;
+}
+.template-option:has(input:focus-visible) {
+  outline: 2px solid var(--green, #286044);
+  outline-offset: 2px;
+}
+.template-option span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.template-option small {
+  color: #6d7966;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.template-thumb {
+  flex: 0 0 60px;
+  width: 60px;
+  height: 80px;
+  border: 1px solid #e4e7df;
+  border-radius: 3px;
+}
+
+/* Executive: two colours, rounded bars, contact footer and signature. */
+.exec-paper {
+  --exec-ink: #1f2a3c;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 210 / 297;
+  /* clip (not hidden) still trims the watermark but lets the A4-shaped
+     page grow when its content is taller. */
+  overflow: clip;
+  background: #fafafa;
+  color: var(--exec-ink);
+  font-family: "Poppins", var(--font-sans, system-ui), sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.exec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+.exec-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: var(--exec-main);
+  font-size: 18px;
+}
+.exec-logo {
+  width: auto;
+  height: auto;
+  max-width: 200px;
+  max-height: 95px;
+  object-fit: contain;
+}
+.exec-title {
+  text-align: right;
+  font-size: 14px;
+}
+.exec-title h2 {
+  color: var(--exec-main);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+}
+.exec-title > span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.exec-divider {
+  display: flex;
+  align-items: center;
+  margin: 22px 0 30px;
+}
+.exec-divider span:first-child {
+  width: 40%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--exec-main);
+}
+.exec-divider span:last-child {
+  flex: 1;
+  height: 3px;
+  background: var(--exec-second);
+}
+.exec-parties {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 34px;
+}
+.exec-parties > div {
+  min-width: 0;
+}
+.exec-parties small {
+  display: block;
+  font-size: 15px;
+  color: var(--exec-main);
+  margin-bottom: 6px;
+}
+.exec-parties > div > strong {
+  display: block;
+  color: var(--exec-main);
+  font-size: 19px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.exec-parties p {
+  overflow-wrap: anywhere;
+}
+.exec-parties dl {
+  text-align: right;
+  font-size: 14px;
+}
+.exec-parties dt {
+  color: var(--exec-main);
+}
+.exec-parties dd {
+  color: var(--exec-main);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.exec-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+.exec-table th {
+  background: var(--exec-main);
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 14px 10px;
+  text-align: center;
+}
+.exec-table th {
+  border: 0;
+  letter-spacing: 0;
+}
+.exec-table th:last-child,
+.exec-table td:last-child {
+  padding-right: 10px;
+}
+.exec-table tbody tr:hover {
+  background: transparent;
+}
+.exec-table tbody tr:last-child td {
+  border-bottom: 2px dashed var(--exec-second);
+}
+.exec-table th:nth-child(2) {
+  width: 14%;
+}
+.exec-table th:first-child {
+  border-radius: 24px 0 0 24px;
+  padding-left: 34px;
+  text-align: left;
+  width: 47%;
+}
+.exec-table th:last-child {
+  border-radius: 0 24px 24px 0;
+}
+.exec-table td {
+  padding: 18px 10px;
+  text-align: center;
+  vertical-align: top;
+  border-bottom: 2px dashed var(--exec-second);
+}
+.exec-table td:first-child {
+  text-align: left;
+  padding-left: 34px;
+  overflow-wrap: anywhere;
+}
+.exec-table td p {
+  font-size: 12px;
+  color: #5f6878;
+  margin-top: 4px;
+}
+.exec-table .exec-empty {
+  text-align: center;
+  color: #5f6878;
+}
+.exec-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+  margin: 26px 0 22px;
+}
+.exec-closing {
+  color: var(--exec-main);
+  font-weight: 600;
+  font-size: 17px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.exec-totals {
+  flex: 0 0 38%;
+  display: grid;
+  gap: 4px;
+}
+.exec-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 26px;
+  font-size: 13px;
+}
+.exec-totals > .exec-total {
+  margin-top: 6px;
+  padding: 9px 26px;
+  border-radius: 24px;
+  background: var(--exec-main);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 600;
+}
+.exec-totals > .exec-total strong {
+  font-weight: 600;
+}
+.exec-payment {
+  width: 50%;
+  padding: 26px 28px;
+  border-radius: 14px;
+  background: var(--exec-main);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.exec-payment > strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.exec-payment b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.exec-notes {
+  margin-top: 18px;
+  font-size: 12px;
+  color: #5f6878;
+  display: grid;
+  gap: 6px;
+}
+.exec-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-top: auto;
+  padding-top: 34px;
+  /* Room for the band, which is pinned to the bottom edge. */
+  margin-bottom: 52px;
+  font-size: 12.5px;
+}
+.exec-contact {
+  min-width: 0;
+}
+.exec-contact strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.exec-contact p {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.exec-contact small {
+  display: block;
+  color: #5f6878;
+}
+.exec-signature {
+  display: grid;
+  justify-items: center;
+  min-width: 190px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.exec-signature .exec-sign {
+  width: 100%;
+  font-family: "Kristi", cursive;
+  font-size: 40px;
+  font-weight: 400;
+  line-height: 1;
+  text-transform: none;
+  color: var(--exec-main);
+  padding: 0 8px 4px;
+  border-bottom: 2px dashed var(--exec-ink);
+  margin-bottom: 8px;
+}
+.exec-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 40px;
+}
+@media (max-width: 760px) {
+  .exec-paper {
+    aspect-ratio: auto;
+    font-size: 12px;
+  }
+  .exec-title h2 {
+    font-size: 28px;
+  }
+  .exec-logo {
+    max-width: 130px;
+    max-height: 70px;
+  }
+  .exec-parties,
+  .exec-summary,
+  .exec-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .exec-parties dl {
+    text-align: left;
+  }
+  .exec-table th,
+  .exec-table td {
+    font-size: 12px;
+    padding: 10px 4px;
+  }
+  .exec-table th:first-child,
+  .exec-table td:first-child {
+    padding-left: 14px;
+  }
+  .exec-payment {
+    width: 100%;
+  }
+  .exec-signature {
+    justify-self: end;
+  }
+  .exec-band {
+    height: 26px;
+  }
+  .exec-footer {
+    margin-bottom: 36px;
+  }
+}
+
+/* Templates page */
+.templates-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.templates-list {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+}
+.template-usage {
+  font-weight: 600;
+  color: #45524a !important;
+}
+.templates-preview {
+  padding: 20px;
+  min-width: 0;
+}
+.templates-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.templates-controls .field {
+  min-width: 180px;
+  margin-bottom: 0;
+}
+.templates-note {
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+@media (max-width: 1100px) {
+  .templates-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .templates-preview {
+    padding: 12px;
+  }
+  .templates-controls .field {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+}

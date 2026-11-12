@@ -62,7 +62,7 @@ Then sign in at `http://localhost:3000/login`. The login page no longer shows de
 The browser talks to Supabase directly with the publishable key, which is public by design. Protection comes from row-level security and triggers in the migration, so these rules hold even for someone calling the API by hand:
 
 - Anonymous visitors can read nothing. Signed-in users who aren’t in `public.employees` can read and change nothing.
-- Nothing can be deleted through the API (no delete privilege or policy). Businesses and items are archived instead.
+- Only customers and items can be deleted through the API; businesses are archived and documents are kept. A customer used by any invoice or quotation (draft or issued) can’t be deleted (the documents’ foreign key refuses it). Document lines copy item details, so deleting an item never changes a document. Nothing in an archived business can be deleted until it is restored. Requires [`20261112150000_delete_customers_items.sql`](supabase/migrations/20261112150000_delete_customers_items.sql), which also removes item archiving (previously archived items become visible again).
 - Invoice and quotation numbers are unique per business and type. The database assigns the next number on issue, one at a time: one more than the highest issued number, keeping its zero-padding, after the prefix. Drafts neither take nor reserve a number.
 - Issued invoices and quotations are immutable. Editing creates a linked draft revision; the original retains its number, contents, issue time and issuing employee. Issuing the revision assigns the next available number. Drafts are unnumbered and do not reserve numbers. Apply `20261112140000_document_revisions.sql` before using this workflow; it clears old draft numbers and preserves all issued numbers.
 - A quotation converts into at most one invoice, and only once it is issued. Two employees converting at the same moment end up on the same invoice.
@@ -96,31 +96,33 @@ Put the printed `API URL` and `Publishable` key in `.env.local`. Local sign-up i
 7. Convert an issued quotation into a separate unnumbered invoice draft. Review the invoice before issuing. Repeated conversion opens the existing linked invoice.
 8. Download a real A4 PDF. Short documents fit on one page; longer documents paginate with a running head and repeated table headings on continuation pages, and “Page X of Y” on every page. Drafts carry a “DRAFT · NOT ISSUED” label and a light watermark.
 
-Archiving a business preserves documents and pauses new document/customer/item work until restored. Items can be archived/restored independently. The fictional Moya Event Styling workspace starts empty to exercise empty states.
+Archiving a business preserves documents and pauses new document/customer/item work until restored. Customers and items can be deleted from their lists; a customer used on an invoice or quotation is kept, and the confirmation says why. The fictional Moya Event Styling workspace starts empty to exercise empty states.
 
 ## Architecture
 
-| Location                     | Responsibility                                                                     |
-| ---------------------------- | ---------------------------------------------------------------------------------- |
-| `src/app`                    | App Router routes, layouts, metadata and responsive styles                         |
-| `src/components`             | Shared controls, Radix dialogs, shell, data provider, navigation guards            |
-| `src/features`               | Login, overview, businesses, customer/catalogue management, editor and preview     |
-| `src/domain/types.ts`        | Employee, business, customer, item, document and snapshot contracts                |
-| `src/domain/documents.ts`    | Scoping, date helpers, calculations, validation, numbering, issuing and conversion |
-| `src/domain/businesses.ts`   | Business-profile rules (VAT number before charging VAT, prefixes, day ranges)      |
-| `src/data/store.ts`          | The data-backend interface, backend selection and record merging                   |
-| `src/data/supabase-store.ts` | Supabase Auth, Postgres and Storage implementation                                 |
-| `src/data/local-store.ts`    | Browser-only demo implementation (localStorage + demo sign-in)                     |
-| `src/data/rows.ts`           | App record ↔ database row mapping, conversion links; unit tested                   |
-| `src/data/errors.ts`         | Plain-language messages for database, sign-in and upload failures                  |
-| `src/data/repository.ts`     | Versioned data validation, browser persistence and record operations               |
-| `src/data/session.ts`        | Demo-session adapter (browser-only mode)                                           |
-| `src/data/fixtures.ts`       | Deterministic fictional fixtures with stable IDs                                   |
-| `supabase/`                  | Migration (schema, rules, access), demo seed, database tests, local stack config   |
-| `scripts/generate-seed.ts`   | Builds `supabase/seed.sql` from the fixtures                                       |
-| `src/pdf/document-pdf.tsx`   | Shared client-business A4 document template and download generation                |
-| `src/pdf/layout.ts`          | Pure PDF layout helpers (long-description splitting), unit tested                  |
-| `tests`                      | Domain tests and Playwright employee workflows                                     |
+| Location                     | Responsibility                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------- |
+| `src/app`                    | App Router routes, layouts, metadata and responsive styles                              |
+| `src/components`             | Shared controls, Radix dialogs, shell, data provider, navigation guards                 |
+| `src/features`               | Login, overview, businesses, customer/catalogue management, editor and preview          |
+| `src/domain/types.ts`        | Employee, business, customer, item, document and snapshot contracts                     |
+| `src/domain/documents.ts`    | Scoping, date helpers, calculations, validation, numbering, issuing and conversion      |
+| `src/domain/businesses.ts`   | Business-profile rules (VAT number before charging VAT, prefixes, day ranges)           |
+| `src/data/store.ts`          | The data-backend interface, backend selection and record merging                        |
+| `src/data/supabase-store.ts` | Supabase Auth, Postgres and Storage implementation                                      |
+| `src/data/local-store.ts`    | Browser-only demo implementation (localStorage + demo sign-in)                          |
+| `src/data/rows.ts`           | App record ↔ database row mapping, conversion links; unit tested                        |
+| `src/data/errors.ts`         | Plain-language messages for database, sign-in and upload failures                       |
+| `src/data/repository.ts`     | Versioned data validation, browser persistence and record operations                    |
+| `src/data/session.ts`        | Demo-session adapter (browser-only mode)                                                |
+| `src/data/fixtures.ts`       | Deterministic fictional fixtures with stable IDs                                        |
+| `supabase/`                  | Migration (schema, rules, access), demo seed, database tests, local stack config        |
+| `scripts/generate-seed.ts`   | Builds `supabase/seed.sql` from the fixtures                                            |
+| `src/domain/templates.ts`    | Document template list, design defaults for older records                               |
+| `src/pdf/document-pdf.tsx`   | A4 PDF generation: picks the template; the Classic template                             |
+| `src/pdf/executive-pdf.tsx`  | The Executive PDF template (mirrored on screen by `src/features/preview-executive.tsx`) |
+| `src/pdf/layout.ts`          | Pure PDF layout helpers (long-description splitting), unit tested                       |
+| `tests`                      | Domain tests and Playwright employee workflows                                          |
 
 The installed Next.js 16.4.5 documentation was consulted, including its App Router, client-component, CSS and Activity state-preservation guidance. The existing Cache Components/Partial Prefetching configuration is retained, which means Next.js keeps up to three recently visited pages alive (hidden) with their state. The app accounts for this:
 
@@ -151,6 +153,7 @@ These apply to both modes unless marked _(browser-only)_.
 - Business profiles require a name, contact email and address; invoice and quotation prefixes may be empty (plain numbers) or 1–12 letters, numbers or hyphens, and must differ when set; payment and validity periods are whole days from 0 to 365.
 - Tax is optional; the VAT registration number is optional even with a positive VAT rate, on both business profiles and documents. Documents are labelled Invoice/Quotation, never automatically “Tax invoice”. This is a prototype, not accounting/tax compliance software.
 - Issuing deep-copies document identities. Later profile/catalogue edits do not modify issued documents. Converted drafts retain the quotation’s issuer and customer snapshots; explicitly changing the selected customer uses the new customer’s details. Payment dates/terms are regenerated for invoices, and quotation-specific notes are not blindly copied.
+- Each business chooses a document template in its settings, which only changes how its invoices and quotations look: **Classic** (the original design) or **Executive** (main and second colour, rounded table header and total, payment card, closing message, contact footer, and a signature drawn from a signatory name and title in a handwriting font). **Preview design** shows a fictional sample invoice before saving. The **Templates** page (sidebar) shows every template and how many businesses use it, with a full preview as an invoice or quotation using fictional sample details, and a sample PDF download. Drafts use the business’s current template; issuing copies it into the snapshot, so issued documents keep their look. Existing businesses and snapshots default to Classic. Apply [`20261112160000_document_templates.sql`](supabase/migrations/20261112160000_document_templates.sql) in Supabase before saving businesses with this version.
 - Logo uploads accept PNG/JPEG up to 2,000 × 2,000 pixels: at most 3 MB with Supabase, and 300 KB in browser-only mode (where the image is kept in the browser’s small local storage). A visible preview confirms the chosen image. In browser-only mode the image itself is stored and copied into snapshots; with Supabase it is uploaded immediately and its permanent URL is stored and copied into snapshots.
 - With Supabase, a failed save leaves the form as it was, shows why (rule broken, connection lost, session expired, someone else changed it) and changes nothing on screen.
 
@@ -165,7 +168,7 @@ npm run build
 
 Unit tests (`npm test`) cover arithmetic, discounts, validation, storage, mapping, numbering on issue, immutable originals, linked revisions, conversion and business scoping.
 
-Forty-six database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
+Fifty-five database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
 
 Run browser tests against an existing local server:
 
@@ -200,7 +203,7 @@ Format source with `npm run format`.
 
 ## Branding
 
-The application adapts the supplied Africonnect POS screenshots into an invoicing-focused workspace. The logo icon was downloaded from the [public Africonnect website](https://www.africonnectsolutions.co.za/logo-icon.png). Its public stylesheet includes lime `#A3D955`; the green surfaces and supporting colours are adapted/estimated from the references, not claimed to be official brand tokens. The app uses a local system sans-serif stack without runtime font downloads. Fictional issuer marks are repository-owned PNGs derived from simple lettermark vectors. All fixture contact, registration and banking details are fictional; no screenshot banking details were transcribed.
+The application adapts the supplied Africonnect POS screenshots into an invoicing-focused workspace. The logo icon was downloaded from the [public Africonnect website](https://www.africonnectsolutions.co.za/logo-icon.png). Its public stylesheet includes lime `#A3D955`; the green surfaces and supporting colours are adapted/estimated from the references, not claimed to be official brand tokens. The app uses a local system sans-serif stack without runtime font downloads. The Executive document template uses Poppins and Kristi, bundled in `public/fonts` under the SIL Open Font License (licence files alongside) and embedded in its PDFs. Fictional issuer marks are repository-owned PNGs derived from simple lettermark vectors. All fixture contact, registration and banking details are fictional; no screenshot banking details were transcribed.
 
 ## Limitations
 
@@ -211,6 +214,6 @@ The application adapts the supplied Africonnect POS screenshots into an invoicin
 - _(Supabase)_ Back up and restore with Supabase’s tools; the free plan has no point-in-time recovery.
 - Navigation warnings cover links, business switching, reload/close and browser history through the Navigation API where available. The browser suite verifies Chromium; other browser engines have not been verified.
 - The HTML preview shares the exact document data and arithmetic with the PDF; line wrapping and pagination differ between HTML and A4.
-- PDFs use Helvetica rather than embedding the interface font. Extremely long line descriptions are divided at paragraph/word boundaries into “(continued)” rows so ordinary line items stay together; unbroken strings longer than 24 characters (URLs, references) are allowed to wrap. Ordinary words are not hyphenated.
+- Classic PDFs use Helvetica; Executive PDFs embed the bundled Poppins and Kristi fonts, so the preview and PDF match. Extremely long line descriptions are divided at paragraph/word boundaries into “(continued)” rows so ordinary line items stay together; unbroken strings longer than 24 characters (URLs, references) are allowed to wrap. Ordinary words are not hyphenated.
 - PDF page chrome uses `@react-pdf/renderer`’s stable pagination engine. In version 4.9, page-number text that is bottom-anchored or shrink-to-fit can be dropped, so the running head and page numbers are top-anchored with fixed widths (see comments in `src/pdf/document-pdf.tsx`). Re-check PDFs after upgrading the library.
 - Not included: public registration, multi-organisation onboarding, customer logins, payment processing, email sending, POS integration, deployment and DNS.

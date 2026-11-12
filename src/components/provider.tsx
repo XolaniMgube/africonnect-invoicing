@@ -30,11 +30,9 @@ type Actions = {
   ): Promise<Business | null>;
   saveCustomer(customer: Customer, message: string): Promise<Customer | null>;
   saveItem(item: ReferenceItem, message: string): Promise<ReferenceItem | null>;
-  setItemArchived(
-    id: string,
-    archived: boolean,
-    message: string,
-  ): Promise<ReferenceItem | null>;
+  /** Resolves true once deleted, or false after showing why not. */
+  deleteCustomer(id: string, message: string): Promise<boolean>;
+  deleteItem(id: string, message: string): Promise<boolean>;
   saveDocument(
     doc: BusinessDocument,
     issue: boolean,
@@ -222,12 +220,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           (db, saved) => merge(db, "items", saved),
           message,
         ),
-      setItemArchived: (id, archived, message) =>
-        run(
-          (db) => store.setItemArchived(db, id, archived),
-          (db, saved) => merge(db, "items", saved),
+      deleteCustomer: async (id, message) =>
+        (await run(
+          (db) => store.deleteCustomer(db, id).then(() => true),
+          (db) => ({
+            ...db,
+            customers: db.customers.filter((c) => c.id !== id),
+          }),
           message,
-        ),
+        )) === true,
+      deleteItem: async (id, message) =>
+        (await run(
+          (db) => store.deleteItem(db, id).then(() => true),
+          (db) => ({ ...db, items: db.items.filter((i) => i.id !== id) }),
+          message,
+        )) === true,
       saveDocument: (doc, issue, message) =>
         run(
           (db) => store.saveDocument(db, doc, issue),

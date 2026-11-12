@@ -41,11 +41,9 @@ export interface Store {
   ): Promise<Business>;
   saveCustomer(db: Database, customer: Customer): Promise<Customer>;
   saveItem(db: Database, item: ReferenceItem): Promise<ReferenceItem>;
-  setItemArchived(
-    db: Database,
-    id: string,
-    archived: boolean,
-  ): Promise<ReferenceItem>;
+  /** Refuses a customer that any invoice or quotation uses. */
+  deleteCustomer(db: Database, id: string): Promise<void>;
+  deleteItem(db: Database, id: string): Promise<void>;
   saveDocument(
     db: Database,
     doc: BusinessDocument,

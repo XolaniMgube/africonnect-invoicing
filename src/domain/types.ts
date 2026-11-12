@@ -1,7 +1,17 @@
 export type DemoEmployee = { id: string; name: string; email: string };
+/** The look of a business's invoices and quotations (see `domain/templates.ts`). */
+export type DocumentTemplate = "classic" | "executive";
 export type CompanyPreferences = {
   logo: string;
   accent: string;
+  template: DocumentTemplate;
+  /** Second colour, used by the Executive template. */
+  secondaryAccent: string;
+  /** Printed under the signature line (Executive). */
+  signatoryName: string;
+  signatoryTitle: string;
+  /** Short line beside the total, e.g. “Thank you for your service!” (Executive). */
+  closingMessage: string;
   invoicePrefix: string;
   quotationPrefix: string;
   paymentDays: number;
@@ -43,7 +53,6 @@ export type ReferenceItem = {
   category: string;
   unit: string;
   price: number;
-  archived: boolean;
 };
 export type LineItem = {
   id: string;

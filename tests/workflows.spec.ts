@@ -292,8 +292,11 @@ test("quotation creation, preview, issue, linked conversion and duplicate preven
     .getByRole("button", { name: "Issue quotation", exact: true })
     .click();
   await page.getByRole("button", { name: "Confirm & issue" }).click();
+  // The previous route stays mounted (hidden), so match the visible copy.
   await expect(
-    page.getByText("Issued and preserved", { exact: true }),
+    page
+      .getByText("Issued and preserved", { exact: true })
+      .filter({ visible: true }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
   const quoteUrl = page.url();
@@ -671,4 +674,203 @@ test("discounts balance on new and edited invoices/quotations, previews, PDFs an
       );
     }
   }
+});
+test("customers and items can be deleted; customers used by documents are kept", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/businesses/glen/items");
+  await expect(page.getByText("Include archived")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Archive / })).toHaveCount(0);
+  await page.getByRole("button", { name: "Delete Site preparation" }).click();
+  await expect(
+    page.getByRole("dialog").getByText(/keep their lines unchanged/),
+  ).toBeVisible();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete", exact: true })
+    .click();
+  await expect(page.getByText("Item deleted.")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("tbody:visible")).toContainText("Brickwork");
+  await expect(page.locator("tbody:visible")).not.toContainText(
+    "Site preparation",
+  );
+  // An issued invoice that used the item keeps its line.
+  await page.goto("/documents/glen-doc-0");
+  await expect(page.locator(".document-paper:visible")).toContainText(
+    "Site preparation",
+  );
+
+  await page.goto("/businesses/glen/customers");
+  await page
+    .getByRole("button", { name: "Delete Mahlangu Property Group" })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("can’t be deleted");
+  await expect(
+    dialog.getByRole("button", { name: "Delete", exact: true }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Add customer", exact: true })
+    .first()
+    .click();
+  await page.getByLabel("Person / company name").fill("Short-lived Customer");
+  await page.getByRole("button", { name: "Save customer" }).click();
+  await expect(page.locator("tbody:visible")).toContainText(
+    "Short-lived Customer",
+  );
+  await page
+    .getByRole("button", { name: "Delete Short-lived Customer" })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete", exact: true })
+    .click();
+  await expect(page.getByText("Customer deleted.")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("tbody:visible")).toContainText(
+    "Mahlangu Property Group",
+  );
+  await expect(page.locator("tbody:visible")).not.toContainText(
+    "Short-lived Customer",
+  );
+  const saved = await storage(page);
+  expect(
+    saved.customers.some(
+      (c: { name: string }) => c.name === "Short-lived Customer",
+    ),
+  ).toBe(false);
+});
+test("businesses choose a document template; issued documents keep theirs", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/businesses/glen/settings");
+  await page.locator(".template-option", { hasText: "Executive" }).click();
+  await expect(page.getByRole("radio", { name: /Executive/ })).toBeChecked();
+  await page.getByLabel("Main colour").fill("#0f2340");
+  await page.getByLabel("Signatory name").fill("T. Example");
+  await page.getByLabel("Signatory title").fill("Director");
+  await page.getByRole("button", { name: "Preview design" }).click();
+  const sample = page.getByRole("dialog", { name: "Sample invoice" });
+  await expect(sample.locator(".exec-paper")).toContainText("Invoice to :");
+  await expect(sample.locator(".exec-paper")).toContainText(
+    "Thank you for your service!",
+  );
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+
+  // A draft shows the business's current template.
+  await page.goto("/documents/glen-doc-1");
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  const paper = page.getByRole("dialog").locator(".exec-paper");
+  await expect(paper).toContainText("Invoice to :");
+  await expect(paper).toContainText("CONTACT US");
+  await expect(paper).toContainText("PAYMENT DETAILS");
+  await expect(paper.locator(".exec-signature")).toContainText("Director");
+  await paper.screenshot({ path: "test-results/executive-preview.png" });
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Download PDF", exact: true })
+    .click();
+  const file = "test-results/executive-invoice.pdf";
+  await (await download).saveAs(file);
+  const pdf = await fs.readFile(file);
+  expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+  expect(pdf.includes("Poppins")).toBe(true);
+
+  // An already-issued invoice keeps the Classic look it was issued with.
+  await page.goto("/documents/glen-doc-0");
+  await expect(page.locator(".document-paper:visible")).toBeVisible();
+  await expect(page.locator(".exec-paper:visible")).toHaveCount(0);
+
+  // Issuing the draft preserves Executive, even after switching back.
+  await page.goto("/documents/glen-doc-1");
+  await page
+    .getByRole("button", { name: "Issue invoice", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Confirm & issue" }).click();
+  await expect(
+    page.getByRole("button", { name: "Edit invoice" }),
+  ).toBeVisible();
+  const issuedUrl = page.url();
+  await page.goto("/businesses/glen/settings");
+  await page.locator(".template-option", { hasText: "Classic" }).click();
+  await expect(page.getByRole("radio", { name: /Classic/ })).toBeChecked();
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+  await page.goto(issuedUrl);
+  await expect(page.locator(".exec-paper:visible")).toContainText("Director");
+  await page
+    .locator(".exec-paper:visible")
+    .screenshot({ path: "test-results/executive-issued.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".exec-paper:visible")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .locator(".exec-paper:visible")
+    .screenshot({ path: "test-results/executive-phone.png" });
+});
+test("the Templates page previews each template with sample details", async ({
+  page,
+}) => {
+  await login(page);
+  await page
+    .getByRole("link", { name: "Templates", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/templates$/);
+  await expect(page.getByRole("heading", { name: "Templates" })).toBeVisible();
+  // Only the sample preview: no business list or business selector.
+  await expect(page.getByLabel("Preview with")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Businesses" })).toHaveCount(
+    0,
+  );
+  const preview = page.locator(".templates-preview .document-paper");
+  await expect(preview).toContainText("Invoice to :");
+  await expect(preview).toContainText("Sample Trading Co");
+  await page.getByLabel("Document").selectOption("quotation");
+  await expect(preview).toContainText("Quotation to :");
+  await expect(preview).not.toContainText("PAYMENT DETAILS");
+  await page
+    .locator(".templates-preview")
+    .screenshot({ path: "test-results/templates-page.png" });
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download sample PDF" }).click();
+  const file = "test-results/template-sample.pdf";
+  await (await download).saveAs(file);
+  expect((await fs.readFile(file)).subarray(0, 5).toString()).toBe("%PDF-");
+
+  const classic = page.locator(".template-option", { hasText: "Classic" });
+  await classic.click();
+  await expect(preview).toContainText("PREPARED FOR");
+  await expect(preview).toContainText("Sample Trading Co");
+  await expect(classic).toContainText(/Used by [1-9]\d* businesses/);
+  await expect(
+    page.locator(".template-option", { hasText: "Executive" }),
+  ).toContainText("Used by 0 businesses");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(preview).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/templates-phone.png",
+    fullPage: true,
+  });
 });

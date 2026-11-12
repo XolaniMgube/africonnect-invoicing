@@ -12,7 +12,13 @@ import type {
 } from "@supabase/supabase-js";
 import type { BusinessDocument } from "../domain/types";
 import { convertQuotation, saveDocument } from "../domain/documents";
-import { parseDatabase, upsertBusiness, upsertRecord } from "./repository";
+import {
+  customerInUse,
+  parseDatabase,
+  removeRecord,
+  upsertBusiness,
+  upsertRecord,
+} from "./repository";
 import {
   businessToRow,
   customerToRow,
@@ -101,6 +107,26 @@ async function selectAll<T>(table: string): Promise<T[]> {
     rows.push(...page);
     if (page.length < PAGE) return rows;
   }
+}
+
+/** Deletes one row; `inUse` explains a refusal by a document's foreign key. */
+async function deleteRow(table: string, id: string, inUse?: string) {
+  let result: Result<{ id: string }[]>;
+  try {
+    result = await supabase().from(table).delete().eq("id", id).select("id");
+  } catch {
+    throw new Error(OFFLINE);
+  }
+  const { error, data } = result;
+  if (error?.code === "23503" && inUse) throw new Error(inUse);
+  // Without the delete privilege (the migration has not been applied).
+  if (error?.code === "42501")
+    throw new Error(
+      "Deleting customers and items is not enabled in the database yet. Ask an administrator to apply the delete-customers-and-items update. Nothing was deleted.",
+    );
+  if (error) throw new Error(databaseMessage(error));
+  // Row-level security hides rows silently, as does an earlier delete.
+  if (!data?.length) throw new Error(databaseMessage({ code: "PGRST116" }));
 }
 
 const found = <T extends { id: string }>(records: T[], id: string) => {
@@ -297,7 +323,7 @@ export function createSupabaseStore(): Store {
         await must(
           supabase()
             .from("items")
-            .update(omit(row, "id", "business_id", "archived"))
+            .update(omit(row, "id", "business_id"))
             .eq("id", row.id)
             .select()
             .single(),
@@ -305,19 +331,16 @@ export function createSupabaseStore(): Store {
       );
     },
 
-    async setItemArchived(db, id, archived) {
-      const current = found(db.items, id);
-      upsertRecord(db, "items", { ...current, archived });
-      return rowToItem(
-        await must(
-          supabase()
-            .from("items")
-            .update({ archived })
-            .eq("id", id)
-            .select()
-            .single(),
-        ),
-      );
+    async deleteCustomer(db, id) {
+      const name = found(db.customers, id).name;
+      removeRecord(db, "customers", id);
+      // Another employee may have used the customer since the page loaded.
+      await deleteRow("customers", id, customerInUse(name));
+    },
+
+    async deleteItem(db, id) {
+      removeRecord(db, "items", id);
+      await deleteRow("items", id);
     },
 
     async saveDocument(db, input, issue) {

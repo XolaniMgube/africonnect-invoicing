@@ -1,3 +1,4 @@
+import { DESIGN_DEFAULTS } from "../domain/templates";
 import type {
   Business,
   BusinessDocument,
@@ -67,6 +68,7 @@ export function createFixtures(): Database {
       name,
       industry,
       accent,
+      ...DESIGN_DEFAULTS,
       logo: logo(initials),
       invoicePrefix,
       quotationPrefix,
@@ -185,7 +187,6 @@ export function createFixtures(): Database {
       category: String(category),
       unit: String(unit),
       price: Number(price),
-      archived: false,
     })),
   );
   const documents: BusinessDocument[] = businesses.slice(0, 3).flatMap((b, i) =>
