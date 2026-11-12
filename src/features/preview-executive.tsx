@@ -140,7 +140,6 @@ export function ExecutivePreview({ doc }: { doc: BusinessDocument }) {
         </tbody>
       </table>
       <div className="exec-summary">
-        <p className="exec-closing">{issuer.closingMessage}</p>
         <div className="exec-totals">
           {breakdown && (
             <>
@@ -196,10 +195,10 @@ export function ExecutivePreview({ doc }: { doc: BusinessDocument }) {
           </p>
         </div>
       )}
-      {(doc.terms || doc.notes) && (
+      {/* Executive omits the terms line (e.g. “Payment within 30 days.”). */}
+      {doc.notes && (
         <div className="exec-notes">
-          {doc.terms && <p>{doc.terms}</p>}
-          {doc.notes && <p className="preserve-lines">{doc.notes}</p>}
+          <p className="preserve-lines">{doc.notes}</p>
         </div>
       )}
       <footer className="exec-footer">

@@ -124,7 +124,7 @@ export function TemplateFields({
     </Field>
   );
   const text = (
-    key: "closingMessage" | "signatoryName" | "signatoryTitle",
+    key: "signatoryName" | "signatoryTitle",
     label: string,
     max: number,
     hint?: string,
@@ -182,12 +182,6 @@ export function TemplateFields({
         {template === "executive" && (
           <>
             {color("secondaryAccent", "Second colour")}
-            {text(
-              "closingMessage",
-              "Closing message",
-              80,
-              "Shown beside the total, e.g. “Thank you for your service!”. Leave empty to hide it.",
-            )}
             {text(
               "signatoryName",
               "Signatory name",

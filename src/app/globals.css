@@ -3430,17 +3430,10 @@ th {
 }
 .exec-summary {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: flex-end;
   gap: 20px;
   margin: 26px 0 22px;
-}
-.exec-closing {
-  color: var(--exec-main);
-  font-weight: 600;
-  font-size: 17px;
-  text-transform: uppercase;
-  overflow-wrap: anywhere;
 }
 .exec-totals {
   flex: 0 0 38%;

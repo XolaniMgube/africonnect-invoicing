@@ -139,15 +139,8 @@ const s = StyleSheet.create({
   total: { width: "19%", textAlign: "center" },
   summary: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
+    justifyContent: "flex-end",
     marginTop: 16,
-  },
-  closing: {
-    width: "55%",
-    fontSize: 11.5,
-    fontWeight: 600,
-    textTransform: "uppercase",
   },
   totals: { width: "40%" },
   breakdown: {
@@ -434,7 +427,6 @@ export function ExecutivePage({ doc }: { doc: BusinessDocument }) {
         )}
       </View>
       <View style={{ ...s.summary, color: main }} wrap={false}>
-        <Text style={s.closing}>{issuer.closingMessage}</Text>
         <View style={s.totals}>
           {breakdown && (
             <>
@@ -490,10 +482,10 @@ export function ExecutivePage({ doc }: { doc: BusinessDocument }) {
           </Text>
         </View>
       )}
-      {(doc.terms || doc.notes) && (
+      {/* Executive omits the terms line (e.g. “Payment within 30 days.”). */}
+      {doc.notes && (
         <View style={s.notes}>
-          {doc.terms && <Text>{doc.terms}</Text>}
-          {doc.notes && <Text>{doc.notes}</Text>}
+          <Text>{doc.notes}</Text>
         </View>
       )}
     </Page>

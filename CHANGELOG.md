@@ -2,6 +2,8 @@
 
 ## 2026-11-12
 
+- Executive template: removed the closing line beside the total (and its “Closing message” setting) and the “Payment within … days.” terms line. The Total box now sits on its own at the right.
+
 - Executive template PDFs: the Contact Us block now appears once, on the last page (with the signature), instead of on every page of a multipage document.
 
 - Added a **Templates** page to the sidebar: browse the templates with usage counts, preview each as an invoice or quotation with fictional sample details, and download a sample PDF. Each business still chooses its template, colours and signature in its settings.

@@ -756,8 +756,12 @@ test("businesses choose a document template; issued documents keep theirs", asyn
   await page.getByRole("button", { name: "Preview design" }).click();
   const sample = page.getByRole("dialog", { name: "Sample invoice" });
   await expect(sample.locator(".exec-paper")).toContainText("Invoice to :");
-  await expect(sample.locator(".exec-paper")).toContainText(
-    "Thank you for your service!",
+  // Executive shows neither the closing line nor the payment terms.
+  await expect(sample.locator(".exec-paper")).not.toContainText(
+    /thank you for your service/i,
+  );
+  await expect(sample.locator(".exec-paper")).not.toContainText(
+    "Payment within",
   );
   await page.keyboard.press("Escape");
   await page
