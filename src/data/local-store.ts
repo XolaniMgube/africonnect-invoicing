@@ -7,10 +7,21 @@ import {
   loadDatabase,
   persistDatabase,
   removeRecord,
+  setAccess,
+  setRole,
+  setSuper,
   upsertBusiness,
   upsertRecord,
 } from "./repository";
 import { convertQuotation, saveDocument } from "../domain/documents";
+import {
+  checkSend,
+  cancelInvoice,
+  deletePayment,
+  recordPayment,
+  restoreInvoice,
+  setDueDate,
+} from "../domain/receivables";
 import { getSession, login, logout } from "./session";
 
 const found = <T extends { id: string }>(records: T[], id: string) => {
@@ -48,6 +59,59 @@ export function createLocalStore(): Store {
         upsertBusiness(db, { ...current, archived }),
       );
       return found(next.businesses, id);
+    },
+    async setBusinessSuper(db, id, isSuper) {
+      const next = persistDatabase(localStorage, setSuper(db, id, isSuper));
+      return found(next.businesses, id);
+    },
+    async setEmployeeRole(db, userId, role) {
+      const next = persistDatabase(localStorage, setRole(db, userId, role));
+      return found(next.employees, userId);
+    },
+    async setBusinessAccess(db, businessId, userId, granted) {
+      persistDatabase(localStorage, setAccess(db, businessId, userId, granted));
+    },
+    async recordPayment(db, payment) {
+      const next = persistDatabase(localStorage, recordPayment(db, payment));
+      return found(next.payments, payment.id);
+    },
+    async deletePayment(db, id) {
+      persistDatabase(localStorage, deletePayment(db, id));
+    },
+    async setDueDate(db, documentId, dueDate) {
+      const next = persistDatabase(
+        localStorage,
+        setDueDate(db, documentId, dueDate),
+      );
+      return next.tracking.find((t) => t.documentId === documentId)!;
+    },
+    async setInvoiceCancelled(db, documentId, cancelled, reason) {
+      const next = persistDatabase(
+        localStorage,
+        cancelled
+          ? cancelInvoice(db, documentId, reason)
+          : restoreInvoice(db, documentId),
+      );
+      return next.tracking.find((t) => t.documentId === documentId)!;
+    },
+    async sendInvoice(db, request) {
+      // The browser-only demo has no email service: it records the attempt
+      // as "demo" and delivers nothing.
+      const doc = checkSend(db, request);
+      const log = {
+        id: crypto.randomUUID(),
+        documentId: doc.id,
+        businessId: doc.businessId,
+        kind: "invoice" as const,
+        recipients: request.to,
+        cc: request.cc,
+        subject: request.subject.trim(),
+        status: "demo" as const,
+        error: "",
+        createdAt: new Date().toISOString(),
+      };
+      persistDatabase(localStorage, { ...db, emails: [...db.emails, log] });
+      return log;
     },
     async saveCustomer(db, customer) {
       const next = persistDatabase(

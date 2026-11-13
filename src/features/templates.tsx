@@ -36,6 +36,8 @@ const SAMPLE_BUSINESS: Business = {
   accountNumber: "0000000000",
   branch: "",
   archived: false,
+  isSuper: false,
+  emailFrom: "",
   taxRate: 15,
   invoicePrefix: "INV",
   quotationPrefix: "QUO",

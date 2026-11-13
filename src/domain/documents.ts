@@ -94,6 +94,7 @@ export function blankDocument(
     notes: business.notes,
     taxRate: business.taxRate,
     discountAmount: 0,
+    showItemPrices: true,
     lines: [],
     snapshot: {
       issuer: clone(business),
@@ -264,6 +265,14 @@ export function saveDocument(
   if (errors.length) throw new Error(errors.join("\n"));
   if (existing && existing.revisionOfId !== doc.revisionOfId)
     throw new Error("The revision origin cannot change.");
+  if (
+    !existing &&
+    doc.revisionOfId &&
+    (next.payments ?? []).some((p) => p.documentId === doc.revisionOfId)
+  )
+    throw new Error(
+      "This invoice has payments recorded. Delete them before editing it.",
+    );
   if (doc.revisionOfId) {
     const original = next.documents.find((d) => d.id === doc.revisionOfId);
     if (

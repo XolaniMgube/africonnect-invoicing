@@ -1,4 +1,17 @@
 import { DESIGN_DEFAULTS } from "../domain/templates";
+import type { EmployeeRecord } from "../domain/types";
+import { employee as demoUser } from "./session";
+
+/** The demo sign-in (an Admin) and a fictional Staff member, browser-only. */
+export const demoEmployees = (): EmployeeRecord[] => [
+  { ...demoUser },
+  {
+    id: "demo-staff",
+    name: "Thandi Example",
+    email: "thandi@example.com",
+    role: "staff",
+  },
+];
 import type {
   Business,
   BusinessDocument,
@@ -83,6 +96,8 @@ export function createFixtures(): Database {
       accountNumber: `DEMO-00000${i}`,
       branch: "DEMO-000",
       archived: false,
+      isSuper: false,
+      emailFrom: "",
       paymentDays: 30,
       validityDays: 14,
       notes:
@@ -231,6 +246,7 @@ export function createFixtures(): Database {
         notes: b.notes,
         taxRate: b.taxRate,
         discountAmount: 0,
+        showItemPrices: true,
         lines,
         snapshot: {
           issuer: structuredClone(b),
@@ -241,5 +257,16 @@ export function createFixtures(): Database {
       };
     }),
   );
-  return { version: 1, businesses, customers, items, documents };
+  return {
+    version: 1,
+    businesses,
+    customers,
+    items,
+    documents,
+    employees: demoEmployees(),
+    access: [],
+    payments: [],
+    tracking: [],
+    emails: [],
+  };
 }

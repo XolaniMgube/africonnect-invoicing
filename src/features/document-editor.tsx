@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useData } from "@/components/provider";
 import {
-  Badge,
   Button,
   Empty,
   Field,
@@ -50,6 +49,9 @@ import type {
 } from "@/domain/types";
 import { CustomerPicker } from "./customer-picker";
 import { DocumentPreview } from "./document-preview";
+import { PaymentsPanel, StatusBadge } from "./payments";
+import { EmailPanel } from "./email";
+import { revisionBlocked } from "@/domain/receivables";
 import { LineAmounts } from "./line-amounts";
 import { RecordForm, blankCustomer } from "./records";
 export function NewDocument() {
@@ -204,6 +206,11 @@ function Editor({
   }
   async function revise() {
     if (saving) return;
+    const blocked = revisionBlocked(db!, doc);
+    if (blocked) {
+      notify(blocked, true);
+      return;
+    }
     const draft = db!.documents.find(
       (d) => d.revisionOfId === doc.id && d.status === "draft",
     );
@@ -260,7 +267,7 @@ function Editor({
             : "Draft only. An official number is assigned when you issue it."
         }
       >
-        <Badge status={doc.status} />
+        <StatusBadge db={db} doc={doc} />
         <Button variant="secondary" onClick={() => setPreview(true)}>
           <Eye size={17} />
           Preview
@@ -291,7 +298,7 @@ function Editor({
             <Link href={`/documents/${revision.id}`}>
               {revision.number || "Open draft revision"}
             </Link>
-            <Badge status={revision.status} />
+            <StatusBadge db={db} doc={revision} />
           </div>
         ))}
       {doc.sourceQuotationId && (
@@ -349,6 +356,8 @@ function Editor({
                 )
               ))}
           </div>
+          <PaymentsPanel doc={doc} />
+          <EmailPanel doc={doc} />
           <DocumentPreview doc={doc} />
         </>
       ) : (
@@ -446,6 +455,20 @@ function Editor({
                         }
                       />
                     </Field>
+                    {kind === "invoice" && business.isSuper && (
+                      <Field
+                        label="Due date"
+                        hint="Used for Overdue and reminders. Not printed on the invoice."
+                      >
+                        <input
+                          type="date"
+                          required
+                          min={doc.date}
+                          value={doc.endDate}
+                          onChange={(e) => set({ endDate: e.target.value })}
+                        />
+                      </Field>
+                    )}
                     <Field
                       label={
                         kind === "invoice"
@@ -562,6 +585,20 @@ function Editor({
                     <Plus size={17} />
                     Add custom line
                   </Button>
+                  <label className="checkbox-label show-prices">
+                    <input
+                      type="checkbox"
+                      checked={doc.showItemPrices !== false}
+                      onChange={(e) =>
+                        set({ showItemPrices: e.target.checked })
+                      }
+                    />
+                    Show item prices on the document
+                  </label>
+                  <small className="show-prices-hint">
+                    Turn off to print only Description, Qty and Total for each
+                    line. Totals are unchanged.
+                  </small>
                 </fieldset>
               </section>
               <section className="card editor-section">

@@ -18,6 +18,9 @@ import {
   parseDatabase,
   persistDatabase,
   removeRecord,
+  setAccess,
+  setRole,
+  setSuper,
   STORAGE_KEY,
   upsertBusiness,
   upsertRecord,
@@ -32,9 +35,30 @@ import {
   linkConversions,
   rowToBusiness,
   rowToDocument,
+  rowToEmployee,
   rowsToDatabase,
 } from "../src/data/rows";
 import { DESIGN_DEFAULTS, templateOf } from "../src/domain/templates";
+import {
+  amounts,
+  cancelInvoice,
+  deletePayment,
+  dueDateOf,
+  invoiceStatus,
+  openInvoices,
+  recordPayment,
+  restoreInvoice,
+  setDueDate,
+  summarise,
+  checkSend,
+} from "../src/domain/receivables";
+import {
+  defaultMessage,
+  emailBody,
+  parseRecipients,
+  pdfName,
+  validateSendRequest,
+} from "../supabase/functions/_shared/invoice-email";
 import { merge } from "../src/data/store";
 import {
   databaseMessage,
@@ -336,6 +360,310 @@ test("document templates: defaults for older records, validation and snapshots",
   assert.equal(
     next.documents.find((d) => d.id === draft.id)!.snapshot.issuer.template,
     "executive",
+  );
+});
+test("hiding item prices is saved, defaults to shown and carries into revisions and conversions", () => {
+  let db = createFixtures();
+  // Records saved before the option existed show prices.
+  const legacy = JSON.parse(JSON.stringify(db));
+  for (const d of legacy.documents) delete d.showItemPrices;
+  assert.ok(
+    parseDatabase(JSON.stringify(legacy)).documents.every(
+      (d) => d.showItemPrices,
+    ),
+  );
+  const row = documentToRow(db.documents[0]) as Record<string, unknown>;
+  delete row.show_item_prices;
+  assert.equal(rowToDocument(row as never).showItemPrices, true);
+
+  const quote = db.documents.find(
+    (d) => d.kind === "quotation" && d.status === "draft",
+  )!;
+  const before = calculate(quote.lines, quote.taxRate, quote.discountAmount);
+  db = saveDocument(db, { ...quote, showItemPrices: false }, true);
+  const issued = db.documents.find((d) => d.id === quote.id)!;
+  assert.equal(issued.showItemPrices, false);
+  assert.deepEqual(issued.totals, before);
+  assert.equal(documentToRow(issued).show_item_prices, false);
+  assert.equal(reviseDocument(issued).showItemPrices, false);
+  const { db: converted, invoiceId } = convertQuotation(db, quote.id);
+  assert.equal(
+    converted.documents.find((d) => d.id === invoiceId)!.showItemPrices,
+    false,
+  );
+});
+test("roles, super businesses and access", () => {
+  let db = createFixtures();
+  assert.deepEqual(
+    db.employees.map((e) => e.role),
+    ["admin", "staff"],
+  );
+  // Older browser data gets the demo users and no access rows.
+  const legacy = JSON.parse(JSON.stringify(db));
+  delete legacy.employees;
+  delete legacy.access;
+  for (const b of legacy.businesses) delete b.isSuper;
+  const loaded = parseDatabase(JSON.stringify(legacy));
+  assert.equal(loaded.employees.length, 2);
+  assert.deepEqual(loaded.access, []);
+  assert.equal(loaded.businesses[0].isSuper, false);
+
+  db = setSuper(db, "glen", true);
+  assert.equal(db.businesses.find((b) => b.id === "glen")!.isSuper, true);
+  assert.equal(businessToRow(db.businesses[0]).is_super, true);
+  // Profile edits keep the flag; it only changes through setSuper.
+  db = upsertBusiness(db, { ...db.businesses[0], phone: "+27 00 000 0999" });
+  assert.equal(db.businesses[0].isSuper, true);
+
+  db = setAccess(db, "glen", "demo-staff", true);
+  db = setAccess(db, "glen", "demo-staff", true);
+  assert.deepEqual(db.access, [{ businessId: "glen", userId: "demo-staff" }]);
+  assert.doesNotThrow(() => parseDatabase(JSON.stringify(db)));
+  db = setAccess(db, "glen", "demo-staff", false);
+  assert.deepEqual(db.access, []);
+  assert.throws(
+    () => setAccess(db, "glen", "nobody", true),
+    /no longer exists/,
+  );
+
+  assert.throws(
+    () => setRole(db, "demo-employee", "staff"),
+    /Keep at least one admin/,
+  );
+  db = setRole(db, "demo-staff", "admin");
+  db = setRole(db, "demo-employee", "staff");
+  assert.deepEqual(
+    db.employees.map((e) => e.role),
+    ["staff", "admin"],
+  );
+  // Supabase rows saved before the roles update count as Staff.
+  assert.equal(
+    rowToEmployee({ user_id: "u1", full_name: "Old row" }).role,
+    "staff",
+  );
+});
+test("payments, due dates, cancelling and superseded invoices", () => {
+  let db = createFixtures();
+  const draft = db.documents.find(
+    (d) =>
+      d.businessId === "glen" && d.kind === "invoice" && d.status === "draft",
+  )!;
+  db = saveDocument(
+    db,
+    { ...draft, date: "2026-11-01", endDate: "2026-12-01" },
+    true,
+  );
+  const inv = db.documents.find((d) => d.id === draft.id)!;
+  const total = inv.totals.total;
+  const pay = (amount: number, id = crypto.randomUUID()) => ({
+    id,
+    documentId: inv.id,
+    amount,
+    paidOn: "2026-11-10",
+    method: "eft" as const,
+    reference: "",
+  });
+
+  // Ordinary businesses: no payments, status stays "issued".
+  assert.equal(invoiceStatus(db, inv, "2026-11-15"), "issued");
+  assert.throws(() => recordPayment(db, pay(10)), /super businesses/);
+
+  db = setSuper(db, "glen", true);
+  assert.equal(invoiceStatus(db, inv, "2026-11-15"), "unpaid");
+  assert.equal(invoiceStatus(db, inv, "2026-12-02"), "overdue");
+
+  db = recordPayment(db, pay(100, "p1"));
+  assert.equal(invoiceStatus(db, inv, "2026-11-15"), "partial");
+  assert.deepEqual(amounts(db, inv), {
+    paid: 100,
+    balance: (Math.round(total * 100) - 10000) / 100,
+  });
+  assert.throws(() => recordPayment(db, pay(total)), /more than the balance/);
+  assert.throws(() => recordPayment(db, pay(0)), /greater than zero/);
+  assert.throws(() => recordPayment(db, pay(1.234)), /two decimal places/);
+  assert.throws(
+    () => recordPayment(db, { ...pay(1), paidOn: "2999-01-01" }),
+    /future/,
+  );
+  // Can't cancel or revise while payments exist.
+  assert.throws(() => cancelInvoice(db, inv.id, ""), /payments recorded/);
+  assert.throws(
+    () => saveDocument(db, reviseDocument(inv)),
+    /payments recorded/,
+  );
+  db = recordPayment(db, pay(amounts(db, inv).balance));
+  assert.equal(invoiceStatus(db, inv, "2027-01-01"), "paid");
+  assert.equal(amounts(db, inv).balance, 0);
+
+  db = deletePayment(db, "p1");
+  assert.equal(invoiceStatus(db, inv, "2026-11-15"), "partial");
+
+  // Due date: changed separately; the invoice itself stays unchanged.
+  db = setDueDate(db, inv.id, "2026-12-31");
+  assert.equal(dueDateOf(db, inv), "2026-12-31");
+  assert.equal(
+    db.documents.find((d) => d.id === inv.id)!.endDate,
+    "2026-12-01",
+  );
+  assert.throws(
+    () => setDueDate(db, inv.id, "2026-10-01"),
+    /before the invoice date/,
+  );
+  assert.doesNotThrow(() => parseDatabase(JSON.stringify(db)));
+
+  // Cancel and restore an unpaid invoice.
+  db = { ...db, payments: [] };
+  db = cancelInvoice(db, inv.id, "Duplicate");
+  assert.equal(invoiceStatus(db, inv), "cancelled");
+  assert.throws(() => recordPayment(db, pay(1)), /Restore this invoice/);
+  db = restoreInvoice(db, inv.id);
+  assert.notEqual(invoiceStatus(db, inv), "cancelled");
+
+  // Issuing a revision supersedes the original (any business).
+  const revision = reviseDocument(inv);
+  db = saveDocument(db, revision);
+  db = saveDocument(
+    db,
+    db.documents.find((d) => d.id === revision.id)!,
+    true,
+  );
+  assert.equal(invoiceStatus(db, inv), "superseded");
+  assert.throws(() => recordPayment(db, pay(1)), /replaced by a revision/);
+  // Older data without payments loads.
+  const legacy = JSON.parse(JSON.stringify(db));
+  delete legacy.payments;
+  delete legacy.tracking;
+  assert.deepEqual(parseDatabase(JSON.stringify(legacy)).payments, []);
+});
+test("receivables: open invoices, overdue ages and totals per customer", () => {
+  let db = setSuper(createFixtures(), "glen", true);
+  const issued = db.documents.filter(
+    (d) =>
+      d.businessId === "glen" && d.kind === "invoice" && d.status === "issued",
+  );
+  assert.equal(issued.length, 2);
+  const [a, b] = issued;
+  db = setDueDate(db, a.id, "2026-12-01");
+  db = setDueDate(db, b.id, "2026-12-01");
+  // Nothing from ordinary businesses, quotations or drafts.
+  assert.deepEqual(
+    openInvoices(db, "2026-11-20")
+      .map((r) => r.doc.id)
+      .sort(),
+    [a.id, b.id].sort(),
+  );
+  let rows = openInvoices(db, "2026-11-20");
+  assert.ok(rows.every((r) => r.bucket === "current" && r.daysOverdue === 0));
+
+  db = recordPayment(db, {
+    id: "p1",
+    documentId: a.id,
+    amount: 1000,
+    paidOn: "2026-11-10",
+    method: "eft",
+    reference: "",
+  });
+  rows = openInvoices(db, "2027-01-15"); // 45 days after the due date
+  assert.ok(rows.every((r) => r.bucket === "31-60" && r.daysOverdue === 45));
+  const totals = summarise(rows);
+  const expected =
+    (Math.round(a.totals.total * 100) -
+      100000 +
+      Math.round(b.totals.total * 100)) /
+    100;
+  assert.equal(totals.outstanding, expected);
+  assert.equal(totals.overdue, expected);
+  assert.equal(totals.overdueCount, 2);
+  assert.equal(totals.buckets.find((x) => x.id === "31-60")!.amount, expected);
+  assert.equal(
+    totals.customers.reduce((sum, c) => sum + c.count, 0),
+    2,
+  );
+  assert.equal(summarise(openInvoices(db, "2027-03-15")).buckets[3].count, 2);
+  // Paid and cancelled invoices drop out.
+  db = recordPayment(db, {
+    id: "p2",
+    documentId: a.id,
+    amount: amounts(db, a).balance,
+    paidOn: "2026-11-11",
+    method: "eft",
+    reference: "",
+  });
+  db = cancelInvoice(db, b.id, "");
+  assert.deepEqual(openInvoices(db, "2027-01-15"), []);
+});
+test("invoice emails: recipients, wording, escaping and send checks", () => {
+  assert.deepEqual(parseRecipients(" a@x.co.za, b@y.com;A@x.co.za  c@z.org "), [
+    "a@x.co.za",
+    "b@y.com",
+    "c@z.org",
+  ]);
+  const ok = {
+    documentId: "d",
+    to: ["a@x.co.za"],
+    cc: [],
+    subject: "Invoice",
+    message: "Hi",
+  };
+  assert.deepEqual(validateSendRequest(ok), []);
+  assert.deepEqual(validateSendRequest({ ...ok, to: [] }), [
+    "Add at least one recipient.",
+  ]);
+  assert.match(
+    validateSendRequest({ ...ok, cc: ["not-an-email"] }).join(),
+    /not-an-email/,
+  );
+  assert.match(
+    validateSendRequest({
+      ...ok,
+      to: Array.from({ length: 11 }, (_, i) => `p${i}@x.co.za`),
+    }).join(),
+    /at most 10/,
+  );
+  const message = defaultMessage({
+    number: "INV-0001",
+    customerName: "Phelang",
+    contact: "",
+    businessName: "Neno Kweli",
+    total: 3000,
+    balance: 1500,
+  });
+  assert.match(message, /Good day Phelang/);
+  assert.match(message, /R\s?3\s?000,00, of which R\s?1\s?500,00 is still due/);
+  const body = emailBody({
+    message: "Hello <b>you</b>\n\nSecond & last",
+    number: "INV-0001",
+    businessName: "Neno Kweli",
+    balance: 1500,
+    dueDate: "2026-12-01",
+  });
+  assert.match(body.html, /Hello &lt;b&gt;you&lt;\/b&gt;/);
+  assert.match(body.html, /Second &amp; last/);
+  assert.match(body.text, /Balance due R\s?1\s?500,00 · Due 2026-12-01/);
+  assert.equal(pdfName("INV/0001 a"), "Invoice-INV-0001-a.pdf");
+
+  // The app checks before calling the email service.
+  let db = setSuper(createFixtures(), "glen", true);
+  const inv = db.documents.find(
+    (d) =>
+      d.businessId === "glen" && d.kind === "invoice" && d.status === "issued",
+  )!;
+  const request = { ...ok, documentId: inv.id };
+  assert.throws(() => checkSend(db, request), /Send invoices from/);
+  db = upsertBusiness(db, {
+    ...db.businesses.find((b) => b.id === "glen")!,
+    emailFrom: "info@africonnectsolutions.co.za",
+  });
+  assert.equal(checkSend(db, request).id, inv.id);
+  assert.throws(
+    () => upsertBusiness(db, { ...db.businesses[0], emailFrom: "nope" }),
+    /must be an email address/,
+  );
+  db = cancelInvoice(db, inv.id, "");
+  assert.throws(() => checkSend(db, request), /cancelled/);
+  assert.throws(
+    () => checkSend(setSuper(db, "glen", false), request),
+    /super businesses/,
   );
 });
 test("invalid dates, prices, quantities, tax and missing issuer details are rejected", () => {

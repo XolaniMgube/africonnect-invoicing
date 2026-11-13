@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-13
+
+- Added emailing invoices for super businesses: **Send invoice** (To, CC, subject, message; PDF attached) and an email history on each issued invoice, a **Send invoices from** setting, and the `send-invoice` Edge Function using Resend. PDFs of issued invoices are saved for emailing. Apply `20261113150000_email.sql`, then follow README → Email invoices (Resend). The browser-only demo records sends as “Demo” without emailing.
+
+- Added **Receivables** for super businesses: outstanding and overdue totals, overdue by age, open invoices (most overdue first) and an owed-by-customer summary, with business and customer filters. No database change.
+
+- Added payments for super businesses: a **Payments** panel on issued invoices (record part or full payments, delete mistakes, change the due date, cancel/restore), statuses **Unpaid / Partially paid / Paid / Overdue / Cancelled** in lists and filters, and a payment period setting. Due dates are never printed. Any business: an invoice replaced by an issued revision shows **Superseded**. An invoice with payments can’t be revised or cancelled. Apply `20261113140000_payments.sql`.
+
+- Added roles and super businesses. Employees are **Admin** or **Staff**; Admins use the new **Users & access** page to change roles, mark super businesses and choose which Staff can see each one. Super businesses are hidden from other Staff, enforced by the database. Apply `20261113130000_roles_super_businesses.sql`, then make the first Admin (README → Connect Supabase, step 6).
+
+- Added **Show item prices on the document** to the invoice/quotation editor (all businesses, both templates). When off, documents print Description, Qty and Total only. Apply `20261113120000_show_item_prices.sql` to Supabase.
+- Fixed: **Download PDF** on a document with unsaved changes asked “Leave and discard them?” and cancelling blocked the download. Download links no longer trigger the unsaved-changes warning.
+
 ## 2026-11-12
 
 - Executive template: removed the closing line beside the total (and its “Closing message” setting) and the “Payment within … days.” terms line. The Total box now sits on its own at the right.

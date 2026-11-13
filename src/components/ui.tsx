@@ -151,11 +151,11 @@ export function Empty({
     </div>
   );
 }
-export function Badge({ status }: { status: string }) {
+export function Badge({ status, label }: { status: string; label?: string }) {
   return (
     <span className={`badge ${status}`}>
       <span />
-      {status}
+      {label ?? status}
     </span>
   );
 }

@@ -3,7 +3,7 @@
 -- that is rolled back, so no test data is left behind.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(55);
+select plan(92);
 
 -- People: one employee, one signed-in user who is not an employee.
 insert into auth.users (id, email) values
@@ -96,7 +96,7 @@ returns void language sql as $$
     'document_date', '2026-11-05',
     'end_date', '2026-12-05',
     'terms', '', 'notes', '',
-    'tax_rate', 15, 'discount_amount', 0,
+    'tax_rate', 15, 'discount_amount', 0, 'show_item_prices', true,
     'lines', '[{"id":"l1","name":"Work","description":"","unit":"Item","quantity":1,"price":100}]'::jsonb,
     'snapshot', '{"issuer":{"id":"10000000-0000-4000-8000-000000000001"},"customer":{"id":"20000000-0000-4000-8000-000000000001"}}'::jsonb,
     'subtotal', 100, 'tax', 15, 'total', 115,
@@ -112,6 +112,10 @@ select is(
         where business_id = '10000000-0000-4000-8000-000000000001' order by number),
   array['', '', ''],
   'drafts do not reserve official numbers');
+select is(
+  (select column_default from information_schema.columns
+   where table_schema = 'public' and table_name = 'documents' and column_name = 'show_item_prices'),
+  'true', 'documents show item prices unless told otherwise');
 select is(
   (select created_by from public.documents where id = '30000000-0000-4000-8000-000000000001'),
   '00000000-0000-4000-8000-000000000001'::uuid,
@@ -299,6 +303,172 @@ select throws_ok(
     '{"discount_amount":10,"tax":13.5,"total":115}')$$,
   '23514', null, 'total must subtract the discount');
 
+reset role;
+
+-- ─── Roles and super businesses ───
+insert into auth.users (id, email) values
+  ('00000000-0000-4000-8000-000000000003', 'boss@africonnectsolutions.co.za');
+insert into public.employees (user_id, full_name)
+  values ('00000000-0000-4000-8000-000000000003', 'Boss');
+select is(
+  (select email from public.employees where user_id = '00000000-0000-4000-8000-000000000003'),
+  'boss@africonnectsolutions.co.za', 'employees get their login email');
+update public.employees set role = 'admin'
+  where user_id = '00000000-0000-4000-8000-000000000003';
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select ok(not public.is_admin(), 'employees start as staff');
+select throws_ok(
+  $$update public.businesses set is_super = true
+    where id = '10000000-0000-4000-8000-000000000002'$$,
+  'P0001', 'Only an admin can change which businesses are super businesses.',
+  'staff cannot make a super business');
+update public.employees set role = 'admin'
+  where user_id = '00000000-0000-4000-8000-000000000001';
+select ok(not public.is_admin(), 'staff cannot promote themselves');
+
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select ok(public.is_admin(), 'admins are recognised');
+select lives_ok(
+  $$update public.businesses set is_super = true
+    where id = '10000000-0000-4000-8000-000000000002'$$,
+  'admins can make a super business');
+select is((select count(*)::int from public.employees), 2,
+  'admins see every employee');
+
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select is(
+  (select count(*)::int from public.businesses
+   where id = '10000000-0000-4000-8000-000000000002'),
+  0, 'staff without access cannot see a super business');
+select is(
+  (select count(*)::int from public.customers
+   where business_id = '10000000-0000-4000-8000-000000000002'),
+  0, 'nor its customers');
+select throws_ok(
+  $$insert into public.customers (business_id, name)
+    values ('10000000-0000-4000-8000-000000000002', 'Sneaky')$$,
+  '42501', null, 'nor add records to it');
+
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select lives_ok(
+  $$insert into public.business_access (business_id, user_id)
+    values ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001')$$,
+  'admins give staff access to a super business');
+
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select is(
+  (select count(*)::int from public.businesses
+   where id = '10000000-0000-4000-8000-000000000002'),
+  1, 'staff with access see the super business');
+select is(
+  (select count(*)::int from public.customers
+   where business_id = '10000000-0000-4000-8000-000000000002'),
+  1, 'and its customers');
+select throws_ok(
+  $$insert into public.business_access (business_id, user_id)
+    values ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001')$$,
+  '42501', null, 'staff cannot give access');
+
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select throws_ok(
+  $$update public.employees set role = 'staff'
+    where user_id = '00000000-0000-4000-8000-000000000003'$$,
+  'P0001', 'Keep at least one admin.', 'the last admin cannot be demoted');
+
+-- ─── Payments, due dates and cancelling (super businesses) ───
+update public.businesses set is_super = true where id = '10000000-0000-4000-8000-000000000001';
+select pg_temp.new_doc('30000000-0000-4000-8000-000000000040', 'invoice', '{"status":"issued"}');
+select lives_ok($$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', 50, '2026-11-10', 'eft')$$, 'part-payments are recorded');
+select is(
+  (select business_id::text from public.payments where document_id = '30000000-0000-4000-8000-000000000040'),
+  '10000000-0000-4000-8000-000000000001', 'a payment belongs to its invoice''s business');
+select throws_ok($$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', 70, '2026-11-10', 'eft')$$,
+  'P0001', 'The payment is more than the balance due.', 'payments cannot exceed the total');
+select throws_ok($$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', 0.005, '2026-11-10', 'eft')$$,
+  '23514', null, 'payments are whole cents');
+select lives_ok($$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', 65, '2026-11-10', 'eft')$$, 'the balance can be paid in full');
+select throws_ok($$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 10, '2026-11-10', 'eft')$$,
+  'P0001', 'This invoice was replaced by a revision.', 'superseded invoices take no payments');
+select throws_ok($$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000001', 10, '2026-11-10', 'eft')$$,
+  'P0001', 'Payments can be recorded only on issued invoices of super businesses.',
+  'quotations take no payments');
+select throws_ok(
+  $$insert into public.invoice_tracking (document_id, business_id, cancelled_at)
+    values ('30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', now())$$,
+  'P0001', 'This invoice has payments recorded. Delete them before cancelling it.',
+  'an invoice with payments cannot be cancelled');
+select throws_ok(
+  $$select pg_temp.new_doc('30000000-0000-4000-8000-000000000041', 'invoice',
+    '{"revision_of_id":"30000000-0000-4000-8000-000000000040"}')$$,
+  'P0001', 'This invoice has payments recorded. Delete them before editing it.',
+  'an invoice with payments cannot be revised');
+select lives_ok(
+  $$insert into public.invoice_tracking (document_id, business_id, cancelled_at, cancel_reason)
+    values ('30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', now(), 'Duplicate')$$,
+  'an unpaid invoice can be cancelled');
+select throws_ok($$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', 10, '2026-11-10', 'eft')$$,
+  'P0001', 'Restore this invoice before recording a payment.', 'cancelled invoices take no payments');
+select throws_ok(
+  $$update public.invoice_tracking set due_date = '2020-01-01'
+    where document_id = '30000000-0000-4000-8000-000000000023'$$,
+  'P0001', 'The due date can’t be before the invoice date.', 'due dates follow the invoice date');
+update public.invoice_tracking set cancelled_at = null
+  where document_id = '30000000-0000-4000-8000-000000000023';
+select is(
+  (select cancel_reason from public.invoice_tracking
+   where document_id = '30000000-0000-4000-8000-000000000023'),
+  '', 'a restored invoice forgets its cancel reason');
+
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select is(
+  (select count(*)::int from public.payments where document_id = '30000000-0000-4000-8000-000000000040'),
+  0, 'staff without access cannot see a super business''s payments');
+
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select lives_ok(
+  $$delete from public.payments where document_id = '30000000-0000-4000-8000-000000000040' and amount = 65$$,
+  'payments can be deleted to correct mistakes');
+
+-- ─── Emailing invoices ───
+select throws_ok(
+  $$update public.businesses set email_from = 'not an email' where id = '10000000-0000-4000-8000-000000000001'$$,
+  '23514', null, 'the sender address must be an email address');
+select lives_ok(
+  $$update public.businesses set email_from = 'info@africonnectsolutions.co.za' where id = '10000000-0000-4000-8000-000000000001'$$,
+  'a business can set its sender address');
+select throws_ok(
+  $$insert into public.email_log (document_id, business_id, recipients, subject, status)
+    values ('30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', '{a@b.co}', 'Hi', 'sent')$$,
+  '42501', null, 'only the email service writes the email log');
+select lives_ok(
+  $$insert into storage.objects (bucket_id, name)
+    values ('invoice-pdfs', '10000000-0000-4000-8000-000000000001/30000000-0000-4000-8000-000000000040.pdf')$$,
+  'an issued invoice''s PDF can be saved');
+select throws_ok(
+  $$insert into storage.objects (bucket_id, name)
+    values ('invoice-pdfs', '10000000-0000-4000-8000-000000000001/30000000-0000-4000-8000-000000000002.pdf')$$,
+  '42501', null, 'drafts have no saved PDF');
+select throws_ok(
+  $$insert into storage.objects (bucket_id, name)
+    values ('invoice-pdfs', 'anything/else.pdf')$$,
+  '42501', null, 'saved PDFs follow the business/invoice path');
 reset role;
 
 -- ─── Logo storage ───

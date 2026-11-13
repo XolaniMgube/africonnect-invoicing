@@ -12,7 +12,13 @@ export function useUnsavedChanges(dirty: boolean) {
       const link = (event.target as Element).closest(
         "a[href]",
       ) as HTMLAnchorElement | null;
-      if (link && link.href !== location.href && !window.confirm(warning)) {
+      // Download links (e.g. the PDF) don't leave the page.
+      if (
+        link &&
+        !link.hasAttribute("download") &&
+        link.href !== location.href &&
+        !window.confirm(warning)
+      ) {
         event.preventDefault();
         event.stopPropagation();
       }

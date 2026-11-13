@@ -14,8 +14,14 @@ import type {
   Customer,
   Database,
   ReferenceItem,
+  EmailLog,
+  EmployeeRecord,
+  InvoiceTracking,
+  Payment,
+  Role,
 } from "@/domain/types";
 import { createStore } from "@/data/create-store";
+import type { SendRequest } from "../../supabase/functions/_shared/invoice-email";
 import { configError, merge, type Backend, type Employee } from "@/data/store";
 
 /** After this long away from the tab, records are re-read on return. */
@@ -28,6 +34,41 @@ type Actions = {
     archived: boolean,
     message: string,
   ): Promise<Business | null>;
+  setBusinessSuper(
+    id: string,
+    isSuper: boolean,
+    message: string,
+  ): Promise<Business | null>;
+  setEmployeeRole(
+    userId: string,
+    role: Role,
+    message: string,
+  ): Promise<EmployeeRecord | null>;
+  /** Resolves true once saved, or false after showing why not. */
+  setBusinessAccess(
+    businessId: string,
+    userId: string,
+    granted: boolean,
+    message: string,
+  ): Promise<boolean>;
+  recordPayment(
+    payment: Omit<Payment, "businessId">,
+    message: string,
+  ): Promise<Payment | null>;
+  /** Resolves true once deleted, or false after showing why not. */
+  deletePayment(id: string, message: string): Promise<boolean>;
+  setDueDate(
+    documentId: string,
+    dueDate: string,
+    message: string,
+  ): Promise<InvoiceTracking | null>;
+  setInvoiceCancelled(
+    documentId: string,
+    cancelled: boolean,
+    reason: string,
+    message: string,
+  ): Promise<InvoiceTracking | null>;
+  sendInvoice(request: SendRequest, message: string): Promise<EmailLog | null>;
   saveCustomer(customer: Customer, message: string): Promise<Customer | null>;
   saveItem(item: ReferenceItem, message: string): Promise<ReferenceItem | null>;
   /** Resolves true once deleted, or false after showing why not. */
@@ -61,6 +102,15 @@ type DataContext = Actions & {
 };
 
 const Context = createContext<DataContext | null>(null);
+
+/** Applies a saved due date / cancellation to the records on screen. */
+const withTracking = (db: Database, saved: InvoiceTracking): Database => ({
+  ...db,
+  tracking: [
+    ...db.tracking.filter((t) => t.documentId !== saved.documentId),
+    saved,
+  ],
+});
 
 type Loaded = { owner: string; db: Database };
 
@@ -206,6 +256,71 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         run(
           (db) => store.setBusinessArchived(db, id, archived),
           (db, saved) => merge(db, "businesses", saved),
+          message,
+        ),
+      setBusinessSuper: (id, isSuper, message) =>
+        run(
+          (db) => store.setBusinessSuper(db, id, isSuper),
+          (db, saved) => merge(db, "businesses", saved),
+          message,
+        ),
+      setEmployeeRole: (userId, role, message) =>
+        run(
+          (db) => store.setEmployeeRole(db, userId, role),
+          (db, saved) => ({
+            ...db,
+            employees: db.employees.map((e) => (e.id === saved.id ? saved : e)),
+          }),
+          message,
+        ),
+      setBusinessAccess: async (businessId, userId, granted, message) =>
+        (await run(
+          (db) =>
+            store
+              .setBusinessAccess(db, businessId, userId, granted)
+              .then(() => true),
+          (db) => {
+            const others = db.access.filter(
+              (a) => !(a.businessId === businessId && a.userId === userId),
+            );
+            return {
+              ...db,
+              access: granted ? [...others, { businessId, userId }] : others,
+            };
+          },
+          message,
+        )) === true,
+      recordPayment: (payment, message) =>
+        run(
+          (db) => store.recordPayment(db, payment),
+          (db, saved) => ({ ...db, payments: [...db.payments, saved] }),
+          message,
+        ),
+      deletePayment: async (id, message) =>
+        (await run(
+          (db) => store.deletePayment(db, id).then(() => true),
+          (db) => ({
+            ...db,
+            payments: db.payments.filter((p) => p.id !== id),
+          }),
+          message,
+        )) === true,
+      setDueDate: (documentId, dueDate, message) =>
+        run(
+          (db) => store.setDueDate(db, documentId, dueDate),
+          withTracking,
+          message,
+        ),
+      setInvoiceCancelled: (documentId, cancelled, reason, message) =>
+        run(
+          (db) => store.setInvoiceCancelled(db, documentId, cancelled, reason),
+          withTracking,
+          message,
+        ),
+      sendInvoice: (request, message) =>
+        run(
+          (db) => store.sendInvoice(db, request),
+          (db, log) => ({ ...db, emails: [log, ...db.emails] }),
           message,
         ),
       saveCustomer: (customer, message) =>

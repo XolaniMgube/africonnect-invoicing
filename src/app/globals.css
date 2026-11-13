@@ -3635,3 +3635,409 @@ th {
     flex: 1 1 140px;
   }
 }
+.checkbox-label.show-prices {
+  margin-top: 18px;
+  font-size: 13px;
+  white-space: normal;
+}
+.show-prices-hint {
+  display: block;
+  margin: 4px 0 0 24px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Roles and super businesses */
+.badge.super {
+  background: #eef0fb;
+  color: #3b4a9a;
+  border: 1px solid #dde1f5;
+}
+.badge-group {
+  display: inline-flex;
+  gap: 6px;
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.admin-card {
+  padding: 20px;
+}
+.admin-card h2 {
+  font-size: 17px;
+  margin-bottom: 4px;
+}
+.admin-card > p.muted {
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.admin-list > li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #edf0e8;
+}
+.admin-list > li.admin-business {
+  display: block;
+}
+.admin-business-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-person {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.admin-person strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.admin-person small {
+  font-size: 11px;
+  color: #6d7966;
+  overflow-wrap: anywhere;
+}
+.admin-list select {
+  width: auto;
+  min-width: 110px;
+}
+.admin-access {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 10px 0 2px 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f7f9f4;
+}
+.admin-access > span {
+  flex-basis: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  color: #45524a;
+}
+.admin-access .checkbox-label {
+  font-size: 12px;
+}
+.admin-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  color: #6d7966;
+}
+@media (max-width: 1100px) {
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 480px) {
+  .admin-access {
+    margin-left: 0;
+  }
+}
+
+/* Payments and invoice statuses */
+.badge.paid {
+  background: #e9f6ee;
+  color: #227046;
+  border: 1px solid #cfe9d9;
+}
+.badge.partial {
+  background: #fff6e6;
+  color: #a06a12;
+  border: 1px solid #f3e2bf;
+}
+.badge.unpaid {
+  background: #eef2f7;
+  color: #3f5672;
+  border: 1px solid #dbe3ee;
+}
+.badge.overdue {
+  background: #fdecec;
+  color: #b42318;
+  border: 1px solid #f7d0cd;
+}
+.badge.cancelled,
+.badge.superseded {
+  background: #f1f2f0;
+  color: #6b7069;
+  border: 1px solid #e2e4e0;
+}
+.payments-card {
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.payments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.payments-head h2 {
+  font-size: 17px;
+}
+.payments-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.payments-summary > div {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f7f9f4;
+}
+.payments-summary span {
+  font-size: 11px;
+  color: #6d7966;
+}
+.payments-summary strong {
+  font-size: 16px;
+}
+.payments-due {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.payments-due .field {
+  margin-bottom: 0;
+  max-width: 260px;
+}
+.payments-table {
+  margin-bottom: 14px;
+}
+.payments-table .numeric {
+  text-align: right;
+}
+.payments-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f7f9f4;
+}
+.payments-form .field {
+  margin-bottom: 0;
+}
+.payments-form .payments-actions {
+  grid-column: 1 / -1;
+}
+.payments-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.payments-cancelled {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.payments-cancelled span {
+  flex: 1;
+}
+@media (max-width: 760px) {
+  .payments-summary {
+    grid-template-columns: 1fr;
+  }
+  .payments-form {
+    grid-template-columns: 1fr;
+  }
+  .payments-table thead {
+    display: none;
+  }
+}
+
+/* Receivables */
+.receivables-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.receivables-filters select {
+  width: auto;
+  min-width: 220px;
+}
+.receivables-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+.receivables-aging {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.receivables-aging > div {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f7f9f4;
+  border-top: 3px solid #c9d3c2;
+}
+.receivables-aging .aging-1-30 {
+  border-top-color: #e2b45b;
+}
+.receivables-aging .aging-31-60 {
+  border-top-color: #e08a4a;
+}
+.receivables-aging .aging-60\+ {
+  border-top-color: #c9443a;
+}
+.receivables-aging span,
+.receivables-aging small {
+  font-size: 11px;
+  color: #6d7966;
+}
+.receivables-aging strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.receivables-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+.receivables-list,
+.receivables-customers {
+  padding: 20px;
+  min-width: 0;
+}
+.receivables-list h2,
+.receivables-customers h2 {
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+.receivables-list .cell-primary small,
+.receivables-days {
+  display: block;
+  font-size: 11px;
+}
+.receivables-customers ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.receivables-customers li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #edf0e8;
+}
+.receivables-customers li span {
+  display: grid;
+  min-width: 0;
+}
+.receivables-customers li small {
+  font-size: 11px;
+  color: #6d7966;
+}
+.receivables-customers li > strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .receivables-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .receivables-aging,
+  .receivables-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .receivables-filters select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+@media (max-width: 480px) {
+  .receivables-aging,
+  .receivables-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Email */
+.email-card {
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.email-note {
+  font-size: 12px;
+  color: #6d7966;
+  margin: 4px 0 10px;
+}
+.email-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.email-history li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #edf0e8;
+}
+.email-history li > svg {
+  flex: none;
+  margin-top: 2px;
+  color: #6d7966;
+}
+.email-history li > span:not(.badge) {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.email-history strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.email-history small {
+  font-size: 11px;
+  color: #6d7966;
+  overflow-wrap: anywhere;
+}
+.email-history .email-error {
+  color: #b42318;
+}
+.badge.email-sent {
+  background: #e9f6ee;
+  color: #227046;
+  border: 1px solid #cfe9d9;
+}
+.badge.email-failed {
+  background: #fdecec;
+  color: #b42318;
+  border: 1px solid #f7d0cd;
+}
+.badge.email-demo {
+  background: #eef2f7;
+  color: #3f5672;
+  border: 1px solid #dbe3ee;
+}

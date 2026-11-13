@@ -15,10 +15,21 @@ import type {
   Customer,
   Database,
   ReferenceItem,
+  EmailLog,
+  EmployeeRecord,
+  InvoiceTracking,
+  Payment,
+  Role,
 } from "../domain/types";
 import { linkConversions } from "./rows";
+import type { SendRequest } from "../../supabase/functions/_shared/invoice-email";
 
-export type Employee = { id: string; name: string; email: string };
+export type Employee = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+};
 
 export type Backend = "local" | "supabase";
 
@@ -39,6 +50,44 @@ export interface Store {
     id: string,
     archived: boolean,
   ): Promise<Business>;
+  /** Admin only. */
+  setBusinessSuper(
+    db: Database,
+    id: string,
+    isSuper: boolean,
+  ): Promise<Business>;
+  /** Admin only. Refuses to remove the last Admin. */
+  setEmployeeRole(
+    db: Database,
+    userId: string,
+    role: Role,
+  ): Promise<EmployeeRecord>;
+  /** Admin only: lets a Staff member see a super business, or not. */
+  setBusinessAccess(
+    db: Database,
+    businessId: string,
+    userId: string,
+    granted: boolean,
+  ): Promise<void>;
+  /** Super businesses' issued invoices only (see domain/receivables.ts). */
+  recordPayment(
+    db: Database,
+    payment: Omit<Payment, "businessId">,
+  ): Promise<Payment>;
+  deletePayment(db: Database, id: string): Promise<void>;
+  setDueDate(
+    db: Database,
+    documentId: string,
+    dueDate: string,
+  ): Promise<InvoiceTracking>;
+  setInvoiceCancelled(
+    db: Database,
+    documentId: string,
+    cancelled: boolean,
+    reason: string,
+  ): Promise<InvoiceTracking>;
+  /** Emails an issued invoice of a super business, with its PDF. */
+  sendInvoice(db: Database, request: SendRequest): Promise<EmailLog>;
   saveCustomer(db: Database, customer: Customer): Promise<Customer>;
   saveItem(db: Database, item: ReferenceItem): Promise<ReferenceItem>;
   /** Refuses a customer that any invoice or quotation uses. */

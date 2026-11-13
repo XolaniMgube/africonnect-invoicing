@@ -10,12 +10,25 @@ import type {
   SupabaseClient,
   User,
 } from "@supabase/supabase-js";
-import type { BusinessDocument } from "../domain/types";
+import type { BusinessDocument, Database } from "../domain/types";
 import { convertQuotation, saveDocument } from "../domain/documents";
+import {
+  checkSend,
+  tracksPayments,
+  cancelInvoice,
+  deletePayment,
+  recordPayment,
+  restoreInvoice,
+  setDueDate,
+} from "../domain/receivables";
+import type { InvoiceTracking } from "../domain/types";
 import {
   customerInUse,
   parseDatabase,
   removeRecord,
+  setAccess,
+  setRole,
+  setSuper,
   upsertBusiness,
   upsertRecord,
 } from "./repository";
@@ -29,6 +42,17 @@ import {
   rowToDocument,
   rowToItem,
   rowsToDatabase,
+  rowToEmployee,
+  rowToEmail,
+  type EmailRow,
+  paymentToRow,
+  rowToPayment,
+  rowToTracking,
+  trackingToRow,
+  type PaymentRow,
+  type TrackingRow,
+  type AccessRow,
+  type EmployeeRow,
   type BusinessRow,
   type CustomerRow,
   type DocumentRow,
@@ -129,6 +153,62 @@ async function deleteRow(table: string, id: string, inUse?: string) {
   if (!data?.length) throw new Error(databaseMessage({ code: "PGRST116" }));
 }
 
+/**
+ * Rows from a table added by a later migration: an empty list (instead of a
+ * broken workspace) while that migration hasn't been applied yet.
+ */
+async function optionalRows<T>(query: PromiseLike<Result<T[]>>): Promise<T[]> {
+  try {
+    return (await maybe(query)) ?? [];
+  } catch (e) {
+    if (e instanceof Error && e.message === OFFLINE) throw e;
+    return [];
+  }
+}
+
+/** Writes an invoice's due date / cancellation as the domain rules left it. */
+async function saveTracking(
+  next: Database,
+  documentId: string,
+): Promise<InvoiceTracking> {
+  const tracking = next.tracking.find((t) => t.documentId === documentId)!;
+  const doc = next.documents.find((d) => d.id === documentId)!;
+  return rowToTracking(
+    await must(
+      supabase()
+        .from("invoice_tracking")
+        .upsert(
+          { ...trackingToRow(tracking), business_id: doc.businessId },
+          { onConflict: "document_id" },
+        )
+        .select()
+        .single(),
+    ),
+  );
+}
+
+/**
+ * Saves an issued invoice's PDF once (later emails and reminders attach this
+ * exact file). An existing file is kept: issued invoices never change.
+ */
+async function saveInvoicePdf(doc: BusinessDocument) {
+  const path = `${doc.businessId}/${doc.id}.pdf`;
+  const bucket = supabase().storage.from("invoice-pdfs");
+  const { data: existing } = await bucket.list(doc.businessId, {
+    search: `${doc.id}.pdf`,
+  });
+  if (existing?.some((f) => f.name === `${doc.id}.pdf`)) return;
+  const { renderPDF } = await import("../pdf/document-pdf");
+  const { error } = await bucket.upload(path, await renderPDF(doc), {
+    contentType: "application/pdf",
+    upsert: false,
+  });
+  if (error && !/exists|duplicate/i.test(error.message))
+    throw new Error(
+      `The invoice PDF could not be saved for emailing. ${error.message}`,
+    );
+}
+
 const found = <T extends { id: string }>(records: T[], id: string) => {
   const record = records.find((r) => r.id === id);
   if (!record) throw new Error("This record no longer exists.");
@@ -138,7 +218,8 @@ const found = <T extends { id: string }>(records: T[], id: string) => {
 async function employeeFor(user: User): Promise<Employee | null> {
   const { data, error } = await supabase()
     .from("employees")
-    .select("full_name")
+    // "*" so sign-in still works before the roles update adds `role`.
+    .select("*")
     .eq("user_id", user.id)
     .maybeSingle();
   if (error) throw new Error(databaseMessage(error));
@@ -147,6 +228,7 @@ async function employeeFor(user: User): Promise<Employee | null> {
   return {
     id: user.id,
     email: user.email ?? "",
+    role: data.role === "admin" ? "admin" : "staff",
     name:
       (data.full_name as string) ||
       metadata?.full_name ||
@@ -240,7 +322,41 @@ export function createSupabaseStore(): Store {
         selectAll<ItemRow>("items"),
       ]);
       const businesses = await selectAll<BusinessRow>("businesses");
-      const db = rowsToDatabase({ businesses, customers, items, documents });
+      // Admins get every employee and access row; Staff only their own.
+      const [employees, access, payments, tracking, emails] = await Promise.all(
+        [
+          optionalRows<EmployeeRow>(
+            supabase().from("employees").select("*").order("full_name"),
+          ),
+          optionalRows<AccessRow>(
+            supabase().from("business_access").select("business_id, user_id"),
+          ),
+          optionalRows<PaymentRow>(
+            supabase().from("payments").select("*").order("paid_on"),
+          ),
+          optionalRows<TrackingRow>(
+            supabase().from("invoice_tracking").select("*"),
+          ),
+          optionalRows<EmailRow>(
+            supabase()
+              .from("email_log")
+              .select("*")
+              .order("created_at", { ascending: false })
+              .limit(1000),
+          ),
+        ],
+      );
+      const db = rowsToDatabase({
+        businesses,
+        customers,
+        items,
+        documents,
+        employees,
+        access,
+        payments,
+        tracking,
+        emails,
+      });
       try {
         return parseDatabase(JSON.stringify(db));
       } catch {
@@ -258,16 +374,20 @@ export function createSupabaseStore(): Store {
       if (!db.businesses.some((b) => b.id === business.id))
         return rowToBusiness(
           await must(
-            supabase().from("businesses").insert(row).select().single(),
+            supabase()
+              .from("businesses")
+              .insert(omit(row, "is_super"))
+              .select()
+              .single(),
           ),
         );
-      // Archive status is changed separately, so a profile edit never undoes
-      // another employee's archive.
+      // Archive and super-business status are changed separately, so a
+      // profile edit never undoes another employee's change to them.
       return rowToBusiness(
         await must(
           supabase()
             .from("businesses")
-            .update(omit(row, "id", "archived"))
+            .update(omit(row, "id", "archived", "is_super"))
             .eq("id", row.id)
             .select()
             .single(),
@@ -287,6 +407,113 @@ export function createSupabaseStore(): Store {
             .single(),
         ),
       );
+    },
+
+    async setBusinessSuper(db, id, isSuper) {
+      setSuper(db, id, isSuper);
+      return rowToBusiness(
+        await must(
+          supabase()
+            .from("businesses")
+            .update({ is_super: isSuper })
+            .eq("id", id)
+            .select()
+            .single(),
+        ),
+      );
+    },
+
+    async setEmployeeRole(db, userId, role) {
+      setRole(db, userId, role);
+      const row = await maybe<EmployeeRow>(
+        supabase()
+          .from("employees")
+          .update({ role })
+          .eq("user_id", userId)
+          .select("*")
+          .maybeSingle(),
+      );
+      // Row-level security hides the change from anyone but an Admin.
+      if (!row) throw new Error("Only an admin can change roles.");
+      return rowToEmployee(row);
+    },
+
+    async setBusinessAccess(db, businessId, userId, granted) {
+      setAccess(db, businessId, userId, granted);
+      if (granted)
+        await maybe(
+          supabase()
+            .from("business_access")
+            .upsert(
+              { business_id: businessId, user_id: userId },
+              { ignoreDuplicates: true },
+            ),
+        );
+      else
+        await maybe(
+          supabase()
+            .from("business_access")
+            .delete()
+            .eq("business_id", businessId)
+            .eq("user_id", userId),
+        );
+    },
+
+    async recordPayment(db, payment) {
+      const next = recordPayment(db, payment);
+      const row = paymentToRow(found(next.payments, payment.id));
+      return rowToPayment(
+        await must(supabase().from("payments").insert(row).select().single()),
+      );
+    },
+
+    async deletePayment(db, id) {
+      deletePayment(db, id);
+      const rows = await maybe<{ id: string }[]>(
+        supabase().from("payments").delete().eq("id", id).select("id"),
+      );
+      if (!rows?.length) throw new Error(databaseMessage({ code: "PGRST116" }));
+    },
+
+    async setDueDate(db, documentId, dueDate) {
+      return saveTracking(setDueDate(db, documentId, dueDate), documentId);
+    },
+
+    async setInvoiceCancelled(db, documentId, cancelled, reason) {
+      return saveTracking(
+        cancelled
+          ? cancelInvoice(db, documentId, reason)
+          : restoreInvoice(db, documentId),
+        documentId,
+      );
+    },
+
+    async sendInvoice(db, request) {
+      const doc = checkSend(db, request);
+      await saveInvoicePdf(doc);
+      const { data, error } = await supabase().functions.invoke<{
+        log?: EmailRow;
+        error?: string;
+      }>("send-invoice", { body: request });
+      if (error) {
+        // The function's own explanation, when it gave one.
+        const context = (error as { context?: Response }).context;
+        const body = await context
+          ?.clone()
+          .json()
+          .catch(() => null);
+        // Resend refused it: the attempt is logged, show it as failed.
+        if (body?.log) return rowToEmail(body.log);
+        if (body?.error) throw new Error(body.error);
+        if (/Failed to send a request|fetch/i.test(error.message))
+          throw new Error(
+            "Couldn’t reach the email service. Check your connection, or ask an administrator to deploy the send-invoice function.",
+          );
+        throw new Error(error.message || "The invoice could not be sent.");
+      }
+      if (!data?.log)
+        throw new Error(data?.error || "The invoice could not be sent.");
+      return rowToEmail(data.log);
     },
 
     async saveCustomer(db, customer) {
@@ -348,15 +575,17 @@ export function createSupabaseStore(): Store {
       const doc = found(saveDocument(db, input, issue).documents, input.id);
       const existing = db.documents.find((d) => d.id === input.id);
       if (!existing)
-        return rowToDocument(
-          await must(
-            supabase()
-              .from("documents")
-              // The database assigns numbers only on issue, including
-              // concurrent issues by different employees.
-              .insert(forInsert({ ...doc, number: "" }))
-              .select()
-              .single(),
+        return afterSave(
+          rowToDocument(
+            await must(
+              supabase()
+                .from("documents")
+                // The database assigns numbers only on issue, including
+                // concurrent issues by different employees.
+                .insert(forInsert({ ...doc, number: "" }))
+                .select()
+                .single(),
+            ),
           ),
         );
       // Only update the version this employee opened (not a newer one that
@@ -379,7 +608,17 @@ export function createSupabaseStore(): Store {
           .select()
           .maybeSingle(),
       );
-      return row ? rowToDocument(row) : draftConflict(doc.id, existing.status);
+      return row
+        ? afterSave(rowToDocument(row))
+        : draftConflict(doc.id, existing.status);
+
+      /** Saves the PDF of a super business's newly issued invoice for emailing. */
+      async function afterSave(saved: BusinessDocument) {
+        if (issue && tracksPayments(db, saved))
+          // Best effort: sending saves it later if this fails.
+          await saveInvoicePdf(saved).catch(() => undefined);
+        return saved;
+      }
     },
 
     async convertQuotation(db, quotationId) {

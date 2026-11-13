@@ -183,12 +183,16 @@ const s = StyleSheet.create({
 const titleOf = (doc: BusinessDocument) =>
   doc.kind === "quotation" ? "QUOTATION" : "INVOICE";
 
-function TableHeadings() {
+/** Description takes the price column's width when prices are hidden. */
+const descStyle = (prices: boolean) =>
+  prices ? s.desc : { ...s.desc, width: "65%" };
+
+function TableHeadings({ prices }: { prices: boolean }) {
   return (
     <>
-      <Text style={s.desc}>DESCRIPTION</Text>
+      <Text style={descStyle(prices)}>DESCRIPTION</Text>
       <Text style={s.qty}>QTY / UNIT</Text>
-      <Text style={s.price}>UNIT PRICE</Text>
+      {prices && <Text style={s.price}>UNIT PRICE</Text>}
       <Text style={s.total}>AMOUNT</Text>
     </>
   );
@@ -267,6 +271,7 @@ export function DocumentPDF({ doc }: { doc: BusinessDocument }) {
 /** The Classic template; mirrors `ClassicPreview`. */
 function ClassicPage({ doc }: { doc: BusinessDocument }) {
   const { issuer, customer } = doc.snapshot;
+  const prices = doc.showItemPrices !== false;
   const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   const invoice = doc.kind === "invoice";
   const accent = issuer.accent;
@@ -346,12 +351,12 @@ function ClassicPage({ doc }: { doc: BusinessDocument }) {
       <View style={s.table}>
         {/* `fixed` inside the table repeats the heading on each page the table continues onto. */}
         <View style={s.tableHead} fixed>
-          <TableHeadings />
+          <TableHeadings prices={prices} />
         </View>
         {doc.lines.flatMap((line) =>
           splitDescription(line.description).map((description, index) => (
             <View style={s.row} key={`${line.id}-${index}`} wrap={false}>
-              <View style={s.desc}>
+              <View style={descStyle(prices)}>
                 <Text style={s.bold}>
                   {index ? `${line.name} (continued)` : line.name}
                 </Text>
@@ -360,7 +365,9 @@ function ClassicPage({ doc }: { doc: BusinessDocument }) {
               <Text style={s.qty}>
                 {index ? "" : `${line.quantity} ${line.unit}`}
               </Text>
-              <Text style={s.price}>{index ? "" : money(line.price)}</Text>
+              {prices && (
+                <Text style={s.price}>{index ? "" : money(line.price)}</Text>
+              )}
               <Text style={s.total}>
                 {index ? "" : money(calculate([line], 0).total)}
               </Text>
@@ -423,9 +430,14 @@ function ClassicPage({ doc }: { doc: BusinessDocument }) {
   );
 }
 
-export async function downloadPDF(doc: BusinessDocument) {
+/** The document's PDF as a file (the same one Download PDF gives). */
+export async function renderPDF(doc: BusinessDocument) {
   const { pdf } = await import("@react-pdf/renderer");
-  const blob = await pdf(<DocumentPDF doc={doc} />).toBlob();
+  return pdf(<DocumentPDF doc={doc} />).toBlob();
+}
+
+export async function downloadPDF(doc: BusinessDocument) {
+  const blob = await renderPDF(doc);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
