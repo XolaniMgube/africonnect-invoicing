@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "supabase/functions/send-invoice",
+    "supabase/functions/send-reminders",
+    "supabase/functions/_shared/deno"
+  ]
 }

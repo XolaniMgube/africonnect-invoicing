@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { useData } from "@/components/provider";
 import {
-  Badge,
   BusinessMark,
   Button,
   Empty,
@@ -19,6 +18,8 @@ import {
   Modal,
   SearchBox,
 } from "@/components/ui";
+import { invoiceStatus, type InvoiceStatus } from "@/domain/receivables";
+import { StatusBadge } from "./payments";
 import { money, dateLabel } from "@/domain/documents";
 import type { BusinessDocument } from "@/domain/types";
 export function CreateDocument({
@@ -117,6 +118,13 @@ export function CreateDocument({
     </>
   );
 }
+/** "Issued" covers every issued status except superseded and cancelled. */
+function matchesStatus(actual: InvoiceStatus, wanted: string) {
+  if (!wanted) return true;
+  if (wanted === "issued")
+    return !["draft", "superseded", "cancelled"].includes(actual);
+  return actual === wanted;
+}
 export function DocumentList({ businessId }: { businessId?: string }) {
   const { db } = useData();
   const [kind, setKind] = useState<BusinessDocument["kind"]>("invoice");
@@ -130,7 +138,7 @@ export function DocumentList({ businessId }: { businessId?: string }) {
         d.kind === kind &&
         (!businessId || d.businessId === businessId) &&
         (!business || d.businessId === business) &&
-        (!status || d.status === status) &&
+        matchesStatus(invoiceStatus(db, d), status) &&
         `${d.number} ${d.snapshot.issuer.name} ${d.snapshot.customer.name}`
           .toLowerCase()
           .includes(query.toLowerCase()),
@@ -220,6 +228,16 @@ export function DocumentList({ businessId }: { businessId?: string }) {
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
           <option value="issued">Issued</option>
+          {kind === "invoice" && db.businesses.some((b) => b.isSuper) && (
+            <>
+              <option value="unpaid">Unpaid</option>
+              <option value="partial">Partially paid</option>
+              <option value="overdue">Overdue</option>
+              <option value="paid">Paid</option>
+              <option value="cancelled">Cancelled</option>
+            </>
+          )}
+          <option value="superseded">Superseded</option>
         </select>
       </div>
       {docs.length ? (
@@ -281,7 +299,7 @@ export function DocumentList({ businessId }: { businessId?: string }) {
                     {money(doc.totals.total)}
                   </td>
                   <td className="cell-status">
-                    <Badge status={doc.status} />
+                    <StatusBadge db={db} doc={doc} />
                   </td>
                   <td className="cell-actions">
                     <Link

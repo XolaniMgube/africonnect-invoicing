@@ -35,6 +35,8 @@ import { validateBusiness } from "@/domain/businesses";
 import type { Business } from "@/domain/types";
 import { DESIGN_DEFAULTS } from "@/domain/templates";
 import { TemplateFields } from "./template-picker";
+import { MailSettingsCard } from "./mail-settings";
+import { AutoRemindersCard } from "./auto-reminders";
 import { CreateDocument, DocumentList } from "./document-list";
 export const newBusiness = (): Business => ({
   id: crypto.randomUUID(),
@@ -53,6 +55,10 @@ export const newBusiness = (): Business => ({
   accountNumber: "",
   branch: "",
   archived: false,
+  isSuper: false,
+  emailFrom: "",
+  autoReminders: false,
+  reminderOffsets: [0, 7, 14],
   taxRate: 0,
   invoicePrefix: "INV",
   quotationPrefix: "QUO",
@@ -143,7 +149,10 @@ export function Businesses() {
           <article className="card business-card" key={b.id}>
             <div className="flex justify-between items-center">
               <BusinessMark business={b} />
-              <Badge status={b.archived ? "archived" : "active"} />
+              <span className="badge-group">
+                {b.isSuper && <Badge status="super" />}
+                <Badge status={b.archived ? "archived" : "active"} />
+              </span>
             </div>
             <h2>{b.name}</h2>
             <p>{b.industry || "Client business"}</p>
@@ -324,6 +333,15 @@ export function BusinessForm({
             // Archive status is managed from the business list, never by this form.
             archived:
               db?.businesses.find((b) => b.id === form.id)?.archived ?? false,
+            // Likewise super-business status and automatic reminders, which
+            // only Admins change (elsewhere).
+            isSuper:
+              db?.businesses.find((b) => b.id === form.id)?.isSuper ?? false,
+            autoReminders:
+              db?.businesses.find((b) => b.id === form.id)?.autoReminders ??
+              false,
+            reminderOffsets: db?.businesses.find((b) => b.id === form.id)
+              ?.reminderOffsets ?? [0, 7, 14],
           },
           initial ? "Business profile saved." : "Client business added.",
         );
@@ -417,6 +435,33 @@ export function BusinessForm({
               onChange={(e) => update("validityDays", Number(e.target.value))}
             />
           </Field>
+          {form.isSuper && (
+            <Field
+              label="Send invoices from"
+              hint="The mailbox invoices are sent from, e.g. info@africonnectsolutions.co.za. Use the same mailbox under Email sending below. Replies go to the contact email."
+            >
+              <input
+                type="email"
+                value={form.emailFrom}
+                onChange={(e) => update("emailFrom", e.target.value.trim())}
+              />
+            </Field>
+          )}
+          {form.isSuper && (
+            <Field
+              label="Payment period (days)"
+              hint="Sets each new invoice’s due date, used for Overdue and reminders. Not printed."
+            >
+              <input
+                type="number"
+                required
+                min="0"
+                max="365"
+                value={form.paymentDays}
+                onChange={(e) => update("paymentDays", Number(e.target.value))}
+              />
+            </Field>
+          )}
           <Field
             label="Default VAT rate (%)"
             hint="Set to 0 for a business that does not charge VAT."
@@ -480,7 +525,7 @@ export function BusinessWorkspace() {
   return (
     <>
       <PageHeading
-        eyebrow={b.industry.toUpperCase()}
+        eyebrow={`${b.industry.toUpperCase()}${b.isSuper ? `${b.industry ? " · " : ""}SUPER BUSINESS` : ""}`}
         title={b.name}
         description="Manage this business’s customers, services and documents."
       >
@@ -550,6 +595,8 @@ export function BusinessSettings() {
       <div className="card settings-card">
         <BusinessForm key={`${b.id}-${b.archived}`} initial={b} />
       </div>
+      <MailSettingsCard key={`mail-${b.id}`} business={b} />
+      <AutoRemindersCard key={`auto-${b.id}`} business={b} />
     </>
   );
 }

@@ -4,8 +4,9 @@ import type {
   Customer,
   Database,
   ReferenceItem,
+  Role,
 } from "../domain/types";
-import { createFixtures } from "./fixtures";
+import { createFixtures, demoEmployees } from "./fixtures";
 import { validateBusiness } from "../domain/businesses";
 import { DESIGN_DEFAULTS } from "../domain/templates";
 const str = z.string();
@@ -24,6 +25,10 @@ const businessSchema = z.object({
   accountNumber: str,
   branch: str,
   archived: z.boolean(),
+  isSuper: z.boolean().default(false),
+  emailFrom: str.default(""),
+  autoReminders: z.boolean().default(false),
+  reminderOffsets: z.array(num.int()).default([0, 7, 14]),
   logo: str,
   accent: str.regex(/^#[a-f\d]{6}$/i),
   // Design fields arrived later: older saved records get the defaults.
@@ -93,6 +98,7 @@ const schema = z.object({
       notes: str,
       taxRate: num,
       discountAmount: num.min(0).default(0),
+      showItemPrices: z.boolean().default(true),
       lines: z.array(lineSchema),
       snapshot: z.object({ issuer: businessSchema, customer: customerSchema }),
       totals: z.object({ subtotal: num, tax: num, total: num }),
@@ -103,6 +109,92 @@ const schema = z.object({
       updatedAt: str,
     }),
   ),
+  // Added with roles; older browser data gets the demo users.
+  employees: z
+    .array(
+      z.object({
+        id: str,
+        name: str,
+        email: str,
+        role: z.enum(["admin", "staff"]),
+      }),
+    )
+    .default(demoEmployees),
+  access: z.array(z.object({ businessId: str, userId: str })).default([]),
+  // Added with payments.
+  payments: z
+    .array(
+      z.object({
+        id: str,
+        documentId: str,
+        businessId: str,
+        amount: num.positive(),
+        paidOn: str,
+        method: z.enum(["eft", "cash", "card", "other"]),
+        reference: str,
+      }),
+    )
+    .default([]),
+  tracking: z
+    .array(
+      z.object({
+        documentId: str,
+        dueDate: str.optional(),
+        cancelledAt: str.optional(),
+        cancelReason: str,
+        autoRemindersPaused: z.boolean().optional(),
+      }),
+    )
+    .default([]),
+  // Added with email.
+  emails: z
+    .array(
+      z.object({
+        id: str,
+        documentId: str,
+        businessId: str,
+        kind: z.enum(["invoice", "reminder"]),
+        recipients: z.array(str),
+        cc: z.array(str),
+        subject: str,
+        status: z.enum(["sent", "failed", "demo"]),
+        error: str,
+        createdAt: str,
+      }),
+    )
+    .default([]),
+  // Added with own-mailbox sending.
+  mailSettings: z
+    .array(
+      z.object({
+        businessId: str,
+        host: str,
+        port: num.int(),
+        username: str,
+        updatedAt: str,
+      }),
+    )
+    .default([]),
+  // Added with reminders.
+  reminders: z
+    .array(
+      z.object({
+        id: str,
+        documentId: str,
+        businessId: str,
+        sendOn: str,
+        recipients: z.array(str),
+        cc: z.array(str),
+        subject: str,
+        message: str,
+        status: z.enum(["scheduled", "sending", "sent", "failed", "cancelled"]),
+        error: str,
+        ruleOffset: num.int().optional(),
+        sentAt: str.optional(),
+        createdAt: str,
+      }),
+    )
+    .default([]),
 });
 export const STORAGE_KEY = "africonnect-invoicing:v1";
 export type StoragePort = Pick<Storage, "getItem" | "setItem">;
@@ -118,6 +210,19 @@ export function parseDatabase(raw: string): Database {
       throw new Error("Duplicate record IDs.");
   }
   const businesses = new Set(data.businesses.map((b) => b.id));
+  const documents = new Set(data.documents.map((d) => d.id));
+  for (const r of [
+    ...data.payments,
+    ...data.tracking,
+    ...data.emails,
+    ...data.reminders,
+  ])
+    if (!documents.has(r.documentId))
+      throw new Error("Invalid payment relationship.");
+  const people = new Set(data.employees.map((e) => e.id));
+  for (const a of data.access)
+    if (!businesses.has(a.businessId) || !people.has(a.userId))
+      throw new Error("Invalid access relationship.");
   for (const r of [...data.customers, ...data.items, ...data.documents])
     if (!businesses.has(r.businessId))
       throw new Error("Missing business relationship.");
@@ -247,4 +352,47 @@ export function removeRecord(
     if (used) throw new Error(customerInUse(record.name, used));
   }
   return { ...db, [collection]: records.filter((r) => r.id !== id) };
+}
+/** Admin: make a business a super business, or an ordinary one again. */
+export function setSuper(db: Database, id: string, isSuper: boolean): Database {
+  const business = db.businesses.find((b) => b.id === id);
+  if (!business) throw new Error("This business no longer exists.");
+  return {
+    ...db,
+    businesses: db.businesses.map((b) => (b.id === id ? { ...b, isSuper } : b)),
+  };
+}
+/** Admin: change an employee's role, keeping at least one Admin. */
+export function setRole(db: Database, userId: string, role: Role): Database {
+  const person = db.employees.find((e) => e.id === userId);
+  if (!person) throw new Error("This employee no longer exists.");
+  if (
+    person.role === "admin" &&
+    role !== "admin" &&
+    !db.employees.some((e) => e.role === "admin" && e.id !== userId)
+  )
+    throw new Error("Keep at least one admin.");
+  return {
+    ...db,
+    employees: db.employees.map((e) => (e.id === userId ? { ...e, role } : e)),
+  };
+}
+/** Admin: let a Staff member see a super business, or remove that access. */
+export function setAccess(
+  db: Database,
+  businessId: string,
+  userId: string,
+  granted: boolean,
+): Database {
+  if (!db.businesses.some((b) => b.id === businessId))
+    throw new Error("This business no longer exists.");
+  if (!db.employees.some((e) => e.id === userId))
+    throw new Error("This employee no longer exists.");
+  const others = db.access.filter(
+    (a) => !(a.businessId === businessId && a.userId === userId),
+  );
+  return {
+    ...db,
+    access: granted ? [...others, { businessId, userId }] : others,
+  };
 }

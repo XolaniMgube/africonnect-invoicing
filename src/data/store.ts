@@ -15,10 +15,24 @@ import type {
   Customer,
   Database,
   ReferenceItem,
+  EmailLog,
+  MailSettings,
+  Reminder,
+  EmployeeRecord,
+  InvoiceTracking,
+  Payment,
+  Role,
 } from "../domain/types";
 import { linkConversions } from "./rows";
+import type { SendRequest } from "../../supabase/functions/_shared/invoice-email";
+import type { ReminderInput } from "../domain/receivables";
 
-export type Employee = { id: string; name: string; email: string };
+export type Employee = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+};
 
 export type Backend = "local" | "supabase";
 
@@ -39,6 +53,77 @@ export interface Store {
     id: string,
     archived: boolean,
   ): Promise<Business>;
+  /** Admin only. */
+  setBusinessSuper(
+    db: Database,
+    id: string,
+    isSuper: boolean,
+  ): Promise<Business>;
+  /** Admin only. Refuses to remove the last Admin. */
+  setEmployeeRole(
+    db: Database,
+    userId: string,
+    role: Role,
+  ): Promise<EmployeeRecord>;
+  /** Admin only: lets a Staff member see a super business, or not. */
+  setBusinessAccess(
+    db: Database,
+    businessId: string,
+    userId: string,
+    granted: boolean,
+  ): Promise<void>;
+  /** Super businesses' issued invoices only (see domain/receivables.ts). */
+  recordPayment(
+    db: Database,
+    payment: Omit<Payment, "businessId">,
+  ): Promise<Payment>;
+  deletePayment(db: Database, id: string): Promise<void>;
+  setDueDate(
+    db: Database,
+    documentId: string,
+    dueDate: string,
+  ): Promise<InvoiceTracking>;
+  setInvoiceCancelled(
+    db: Database,
+    documentId: string,
+    cancelled: boolean,
+    reason: string,
+  ): Promise<InvoiceTracking>;
+  /** Admin only. An empty password keeps the saved one. */
+  saveMailSettings(
+    db: Database,
+    settings: Omit<MailSettings, "updatedAt"> & { password: string },
+  ): Promise<MailSettings>;
+  /** Admin only: emails the signed-in admin through the saved mailbox. */
+  sendTestEmail(
+    db: Database,
+    businessId: string,
+    to: string,
+  ): Promise<{ to: string }>;
+  /** Admin only: automatic reminders on/off and their days. */
+  saveReminderRules(
+    db: Database,
+    businessId: string,
+    enabled: boolean,
+    offsets: number[],
+  ): Promise<Business>;
+  /** Admin only: pause or resume one invoice's automatic reminders. */
+  setAutoRemindersPaused(
+    db: Database,
+    documentId: string,
+    paused: boolean,
+  ): Promise<InvoiceTracking>;
+  /** Admin only: a payment reminder for an issued invoice with a balance. */
+  scheduleReminder(db: Database, input: ReminderInput): Promise<Reminder>;
+  /** Admin only. */
+  cancelReminder(db: Database, id: string): Promise<Reminder>;
+  /** Admin only: sends a scheduled reminder now instead of on its date. */
+  sendReminderNow(
+    db: Database,
+    id: string,
+  ): Promise<{ reminder: Reminder; log: EmailLog | null }>;
+  /** Emails an issued invoice of a super business, with its PDF. */
+  sendInvoice(db: Database, request: SendRequest): Promise<EmailLog>;
   saveCustomer(db: Database, customer: Customer): Promise<Customer>;
   saveItem(db: Database, item: ReferenceItem): Promise<ReferenceItem>;
   /** Refuses a customer that any invoice or quotation uses. */

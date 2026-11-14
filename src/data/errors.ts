@@ -28,6 +28,11 @@ export function databaseMessage(error: Failure): string {
     return "Document discounts are not enabled in the database yet. Ask an administrator to apply the document-discounts update, then save again. Nothing was saved.";
   if (
     (error.code === "PGRST204" || error.code === "42703") &&
+    /show_item_prices/.test(error.message ?? "")
+  )
+    return "Hiding item prices is not enabled in the database yet. Ask an administrator to apply the item-prices update, then save again. Nothing was saved.";
+  if (
+    (error.code === "PGRST204" || error.code === "42703") &&
     /revision_of_id/.test(error.message ?? "")
   )
     return "Document revisions are not enabled in the database yet. Ask an administrator to apply the document-revisions update. Nothing was saved.";
@@ -38,6 +43,11 @@ export function databaseMessage(error: Failure): string {
     )
   )
     return "Document templates are not enabled in the database yet. Ask an administrator to apply the document-templates update, then save again. Nothing was saved.";
+  if (
+    ["42P01", "PGRST205", "PGRST204", "42703"].includes(error.code ?? "") &&
+    /payments|invoice_tracking/.test(error.message ?? "")
+  )
+    return "Payments are not enabled in the database yet. Ask an administrator to apply the payments update. Nothing was saved.";
   switch (error.code) {
     case "P0001": // raised by a database rule
       return error.message || "The database rejected this change.";

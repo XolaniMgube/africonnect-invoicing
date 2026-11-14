@@ -878,3 +878,588 @@ test("the Templates page previews each template with sample details", async ({
     fullPage: true,
   });
 });
+test("item prices can be hidden on a document, in both templates", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/businesses/glen/documents/new?kind=invoice");
+  await pickCustomer(page, "Mahlangu Property Group");
+  await page.getByRole("button", { name: "Add custom line" }).click();
+  await page.getByLabel("Line 1 name").fill("Hidden-price work");
+  await page.getByLabel("Unit price (R)").fill("750");
+  await page.getByLabel("Quantity", { exact: true }).fill("2");
+  const toggle = page.getByRole("checkbox", {
+    name: "Show item prices on the document",
+  });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator("thead")).not.toContainText("Unit price");
+  await expect(dialog.locator("tbody")).not.toContainText("750,00");
+  await expect(dialog.locator("tbody")).toContainText("1 500,00");
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page
+    .getByRole("button", { name: "Issue invoice", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Confirm & issue" }).click();
+  await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
+  await page.reload();
+  const paper = page.locator(".document-paper:visible");
+  await expect(paper.locator("thead")).toContainText("Qty / unit");
+  await expect(paper.locator("thead")).not.toContainText("Unit price");
+  await expect(paper).toContainText("1 500,00");
+  let download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PDF", exact: true }).click();
+  await (await download).saveAs("test-results/hidden-prices-classic.pdf");
+
+  // A new document in the Executive template.
+  await page.goto("/businesses/glen/settings");
+  await page.locator(".template-option", { hasText: "Executive" }).click();
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+  await page.goto("/businesses/glen/documents/new?kind=invoice");
+  await pickCustomer(page, "Mahlangu Property Group");
+  await page.getByRole("button", { name: "Add custom line" }).click();
+  await page.getByLabel("Line 1 name").fill("Hidden-price work");
+  await page.getByLabel("Unit price (R)").fill("750");
+  await page.getByLabel("Quantity", { exact: true }).fill("2");
+  await page
+    .getByRole("checkbox", { name: "Show item prices on the document" })
+    .uncheck();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  const exec = page.getByRole("dialog").locator(".exec-paper");
+  await expect(exec.locator("thead")).toContainText("Qty");
+  await expect(exec.locator("thead")).not.toContainText("Price");
+  await expect(exec.locator("tbody")).not.toContainText("750,00");
+  download = page.waitForEvent("download");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Download PDF", exact: true })
+    .click();
+  await (await download).saveAs("test-results/hidden-prices-executive.pdf");
+});
+test("admins manage roles, super businesses and access", async ({ page }) => {
+  await login(page);
+  await page
+    .getByRole("link", { name: "Users & access", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(
+    page.getByRole("heading", { name: "Users & access" }),
+  ).toBeVisible();
+  const myRole = page.getByLabel("Role for Demo employee");
+  await expect(myRole).toHaveValue("admin");
+  await expect(page.getByLabel("Role for Thandi Example")).toHaveValue("staff");
+
+  // The last admin can't be demoted.
+  await myRole.selectOption("staff");
+  await expect(page.getByText("Keep at least one admin.")).toBeVisible();
+  await expect(myRole).toHaveValue("admin");
+
+  const superGlen = page.getByLabel("Super business: Glen Zamba Construction");
+  await superGlen.check();
+  await expect(
+    page.getByText("Glen Zamba Construction is now a super business."),
+  ).toBeVisible();
+  const access = page.getByLabel(
+    "Thandi Example can see Glen Zamba Construction",
+  );
+  await expect(access).not.toBeChecked();
+  await access.check();
+  await expect(
+    page.getByText("Thandi Example can now see Glen Zamba Construction."),
+  ).toBeVisible();
+
+  await page.getByLabel("Role for Thandi Example").selectOption("admin");
+  await expect(page.getByText("Thandi Example is now an admin.")).toBeVisible();
+
+  await page.reload();
+  await expect(superGlen).toBeChecked();
+  await expect(page.getByLabel("Role for Thandi Example")).toHaveValue("admin");
+  // Admins see every business, so the access list is for staff only.
+  await expect(access).toHaveCount(0);
+
+  await page.goto("/businesses");
+  const card = page.locator(".business-card", {
+    hasText: "Glen Zamba Construction",
+  });
+  await expect(card.locator(".badge.super")).toBeVisible();
+  await page.goto("/businesses/glen");
+  await expect(page.getByText(/SUPER BUSINESS/)).toBeVisible();
+
+  // Editing the profile keeps the super-business flag.
+  await page.goto("/businesses/glen/settings");
+  await page.getByLabel("Phone", { exact: true }).fill("+27 00 000 0999");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+  await page.goto("/admin");
+  await expect(superGlen).toBeChecked();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+test("super businesses record payments, due dates and cancellations; revisions supersede", async ({
+  page,
+}) => {
+  page.on("dialog", (dialog) => void dialog.accept());
+  await login(page);
+  // Ordinary business: no payments panel.
+  await page.goto("/documents/glen-doc-0");
+  await expect(page.getByRole("region", { name: "Payments" })).toHaveCount(0);
+
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await expect(page.getByLabel("Payment period (days)")).toHaveValue("30");
+
+  await page.goto("/documents/glen-doc-0");
+  const panel = page.getByRole("region", { name: "Payments" });
+  await expect(panel).toBeVisible();
+  const due = panel.getByLabel("Due date");
+  await due.fill("2099-12-31");
+  await panel.getByRole("button", { name: "Save due date" }).click();
+  await expect(page.getByText("Due date updated.")).toBeVisible();
+  await expect(panel.locator(".badge")).toHaveText("Unpaid");
+
+  await panel.getByRole("button", { name: "Record payment" }).click();
+  await panel.getByLabel("Amount (R)").fill("500");
+  await panel.getByLabel("Reference (optional)").fill("EFT-123");
+  await panel.getByRole("button", { name: "Save payment" }).click();
+  await expect(page.getByText("Payment recorded.")).toBeVisible();
+  await expect(panel.locator(".badge")).toHaveText("Partially paid");
+  await expect(panel).toContainText("EFT-123");
+  await expect(panel).toContainText("R 500,00");
+
+  // An invoice with payments can't be revised or cancelled.
+  await page.getByRole("button", { name: "Edit invoice", exact: true }).click();
+  await expect(
+    page.getByText(
+      "This invoice has payments recorded. Delete them before editing it.",
+    ),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Cancel invoice" }),
+  ).toHaveCount(0);
+
+  // Paying the rest (the form suggests the balance).
+  await panel.getByRole("button", { name: "Record payment" }).click();
+  await panel.getByRole("button", { name: "Save payment" }).click();
+  await expect(panel.locator(".badge")).toHaveText("Paid");
+  await expect(
+    panel.getByRole("button", { name: "Record payment" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(panel.locator(".badge")).toHaveText("Paid");
+
+  // Deleting a payment (to fix a mistake), then overdue via the due date.
+  await panel
+    .getByRole("button", { name: /Delete payment of R 500,00/ })
+    .click();
+  await expect(page.getByText("Payment deleted.")).toBeVisible();
+  await expect(panel.locator(".badge")).toHaveText("Partially paid");
+  const issuedOn = await page.evaluate(
+    () =>
+      JSON.parse(
+        localStorage.getItem("africonnect-invoicing:v1")!,
+      ).documents.find((d: { id: string }) => d.id === "glen-doc-0").date,
+  );
+  await due.fill(issuedOn);
+  await panel.getByRole("button", { name: "Save due date" }).click();
+  await expect(panel.locator(".badge")).toHaveText("Overdue");
+
+  // Documents list shows the status and filters by it.
+  await page.goto("/businesses/glen");
+  await page.getByLabel("Filter by status").selectOption("overdue");
+  await expect(page.locator("tbody:visible tr")).toHaveCount(1);
+  await expect(page.locator("tbody:visible")).toContainText("GZ-INV-0001");
+
+  // Cancel and restore an unpaid invoice.
+  await page.goto("/documents/glen-doc-2");
+  await panel.getByRole("button", { name: "Cancel invoice" }).click();
+  await page
+    .getByRole("dialog")
+    .getByLabel("Reason (optional)")
+    .fill("Duplicate");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel invoice" })
+    .click();
+  await expect(page.getByText("Invoice cancelled.")).toBeVisible();
+  await expect(panel).toContainText("Duplicate");
+  await expect(panel.locator(".badge")).toHaveText("Cancelled");
+  await panel.getByRole("button", { name: "Restore" }).click();
+  await expect(page.getByText("Invoice restored.")).toBeVisible();
+  await expect(panel.locator(".badge")).not.toHaveText("Cancelled");
+
+  // Issuing a revision supersedes the original.
+  await page.getByRole("button", { name: "Edit invoice", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Draft invoice", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Due date").filter({ visible: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Issue invoice", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Confirm & issue" }).click();
+  await expect(
+    page.getByRole("link", { name: "GZ-INV-0003" }).filter({ visible: true }),
+  ).toBeVisible();
+  await page.goto("/documents/glen-doc-2");
+  await expect(
+    page.locator(".page-heading .badge").filter({ visible: true }),
+  ).toHaveText("Superseded");
+  await expect(page.getByRole("region", { name: "Payments" })).toHaveCount(0);
+});
+test("receivables list what super businesses are owed", async ({ page }) => {
+  await login(page);
+  // No super business yet: no Receivables link.
+  await expect(
+    page.getByRole("link", { name: "Receivables", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+
+  // One invoice part-paid and overdue, the other not yet due.
+  await page.goto("/documents/glen-doc-0");
+  const panel = page.getByRole("region", { name: "Payments" });
+  const issuedOn = await page.evaluate(
+    () =>
+      JSON.parse(
+        localStorage.getItem("africonnect-invoicing:v1")!,
+      ).documents.find((d: { id: string }) => d.id === "glen-doc-0").date,
+  );
+  await panel.getByLabel("Due date").fill(issuedOn);
+  await panel.getByRole("button", { name: "Save due date" }).click();
+  await expect(page.getByText("Due date updated.")).toBeVisible();
+  await panel.getByRole("button", { name: "Record payment" }).click();
+  await panel.getByLabel("Amount (R)").fill("1020");
+  await panel.getByRole("button", { name: "Save payment" }).click();
+  await expect(page.getByText("Payment recorded.")).toBeVisible();
+  await page.goto("/documents/glen-doc-2");
+  await panel.getByLabel("Due date").fill("2099-12-31");
+  await panel.getByRole("button", { name: "Save due date" }).click();
+  await expect(page.getByText("Due date updated.")).toBeVisible();
+
+  await page
+    .getByRole("link", { name: "Receivables", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/receivables$/);
+  const list = page.locator(".receivables-list tbody");
+  await expect(list.locator("tr")).toHaveCount(2);
+  // Most overdue first, with its remaining balance (17 020 − 1 020).
+  await expect(list.locator("tr").first()).toContainText("GZ-INV-0001");
+  await expect(list.locator("tr").first()).toContainText("R 16 000,00");
+  await expect(list.locator("tr").first()).toContainText("overdue");
+  await expect(list.locator("tr").nth(1)).toContainText("Not yet due");
+  await expect(page.locator(".receivables-stats")).toContainText("R 16 000,00");
+  await expect(
+    page.getByRole("region", { name: "Overdue by age" }),
+  ).toContainText("Not yet due");
+  await expect(page.locator(".receivables-customers")).toContainText(
+    "Mahlangu Property Group",
+  );
+
+  await page.getByLabel("Filter by customer").selectOption({
+    label: "Mahlangu Property Group",
+  });
+  await expect(list.locator("tr")).toHaveCount(2);
+  await list.getByRole("link", { name: "Open GZ-INV-0001" }).click();
+  await expect(page).toHaveURL(/\/documents\/glen-doc-0$/);
+
+  await page.goto("/receivables");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(list).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+test("super businesses email issued invoices (recorded as demo in the browser-only app)", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+
+  // Without a sender address the invoice can't be sent yet.
+  await page.goto("/documents/glen-doc-0");
+  const card = page.getByRole("region", { name: "Email" });
+  await expect(
+    card.getByRole("button", { name: "Send invoice" }),
+  ).toBeDisabled();
+  await card.getByRole("link", { name: "business settings" }).click();
+  const sender = page.getByLabel("Send invoices from");
+  await sender.fill("not-an-email");
+  // The browser refuses an invalid address before saving.
+  expect(
+    await sender.evaluate((el) => (el as HTMLInputElement).validity.valid),
+  ).toBe(false);
+  await page
+    .getByLabel("Send invoices from")
+    .fill("info@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+
+  await page.goto("/documents/glen-doc-0");
+  await expect(card).toContainText("Not emailed yet.");
+  await card.getByRole("button", { name: "Send invoice" }).click();
+  const dialog = page.getByRole("dialog", {
+    name: /Email invoice GZ-INV-0001/,
+  });
+  await expect(dialog).toContainText(
+    "Glen Zamba Construction <info@africonnectsolutions.co.za>",
+  );
+  await expect(dialog.getByLabel("To")).toHaveValue(
+    "accounts0@glen-customer.example",
+  );
+  await expect(dialog.getByLabel("Subject")).toHaveValue(
+    "Invoice GZ-INV-0001 from Glen Zamba Construction",
+  );
+  await expect(dialog.getByLabel("Message")).toHaveValue(
+    /Good day Sipho Example/,
+  );
+  await dialog.getByLabel("CC (optional)").fill("not valid");
+  await dialog.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("not");
+  await dialog.getByLabel("CC (optional)").fill("finance@example.com");
+  await dialog.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.getByText("Demo only: recorded, but nothing was emailed."),
+  ).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(card).toContainText(
+    "Invoice GZ-INV-0001 from Glen Zamba Construction",
+  );
+  await expect(card).toContainText("cc finance@example.com");
+  await expect(card.locator(".badge")).toHaveText("Demo");
+  await page.reload();
+  await expect(card.locator(".badge")).toHaveText("Demo");
+});
+test("admins save a super business's own mailbox settings", async ({
+  page,
+}) => {
+  await login(page);
+  // Ordinary business: no email sending section.
+  await page.goto("/businesses/glen/settings");
+  await expect(page.getByRole("region", { name: "Email sending" })).toHaveCount(
+    0,
+  );
+
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await page
+    .getByLabel("Send invoices from")
+    .fill("info@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+  await page.reload();
+
+  const card = page.getByRole("region", { name: "Email sending" });
+  await expect(card).toContainText("Not set up yet");
+  await expect(card).toContainText("Save the mail settings first.");
+  await expect(card.getByLabel("Send test email to")).toHaveValue(
+    "user@africonnectsolutions.co.za",
+  );
+  await expect(
+    card.getByRole("button", { name: "Send test email" }),
+  ).toBeDisabled();
+  // Suggested from the sender address.
+  await expect(card.getByLabel("Outgoing mail server")).toHaveValue(
+    "mail.africonnectsolutions.co.za",
+  );
+  await expect(card.getByLabel("Username (mailbox address)")).toHaveValue(
+    "info@africonnectsolutions.co.za",
+  );
+  await expect(card.getByLabel("Port")).toHaveValue("465");
+  await card.getByRole("button", { name: "Save mail settings" }).click();
+  await expect(card.getByRole("alert")).toContainText(
+    "Enter the mailbox password.",
+  );
+  await card.getByLabel("Mailbox password").fill("secret");
+  await card.getByRole("button", { name: "Save mail settings" }).click();
+  await expect(page.getByText("Mail settings saved.")).toBeVisible();
+  await expect(card.getByLabel("Mailbox password")).toHaveValue("");
+  await expect(card).toContainText("Saved.");
+  await expect(card).not.toContainText("Save the mail settings first.");
+  await card.getByLabel("Send test email to").fill("someone@example.com");
+  // The browser-only demo can't send.
+  await card.getByRole("button", { name: "Send test email" }).click();
+  await expect(
+    page.getByText(/browser-only demo can’t send email/),
+  ).toBeVisible();
+  // Once saved, the password can be left empty.
+  await card.getByLabel("Port").selectOption("587");
+  await card.getByRole("button", { name: "Save mail settings" }).click();
+  await expect(page.getByText("Mail settings saved.")).toBeVisible();
+  await page.reload();
+  await expect(card.getByLabel("Port")).toHaveValue("587");
+});
+test("admins schedule, send and cancel reminders; paying in full cancels the rest", async ({
+  page,
+}) => {
+  page.on("dialog", (dialog) => void dialog.accept());
+  await login(page);
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await page
+    .getByLabel("Send invoices from")
+    .fill("accounts@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+
+  await page.goto("/documents/glen-doc-0");
+  const panel = page.getByRole("region", { name: "Reminders" });
+  await expect(panel).toContainText("No reminders scheduled.");
+  await expect(panel).toContainText("12:00");
+
+  // Schedule one (defaults: customer email, reminder wording without amounts).
+  await panel.getByRole("button", { name: "Schedule reminder" }).click();
+  const dialog = page.getByRole("dialog", { name: /Schedule a reminder/ });
+  await expect(dialog.getByLabel("To")).toHaveValue(
+    "accounts0@glen-customer.example",
+  );
+  await expect(dialog.getByLabel("Subject")).toHaveValue(
+    "Reminder: invoice GZ-INV-0001 from Glen Zamba Construction",
+  );
+  await expect(dialog.getByLabel("Message")).toHaveValue(/friendly reminder/);
+  await dialog.getByLabel("Send on").fill("2099-12-31");
+  await dialog.getByRole("button", { name: "Schedule reminder" }).click();
+  await expect(
+    page.getByText(/Reminder scheduled for 31 Dec 2099 at 12:00/),
+  ).toBeVisible();
+  await expect(panel.locator(".badge")).toHaveText("Scheduled");
+
+  // Send now (the demo records it; nothing is emailed).
+  await panel
+    .getByRole("button", { name: /Send reminder of 31 Dec 2099 now/ })
+    .click();
+  await expect(
+    page.getByText("Demo only: recorded, but nothing was emailed."),
+  ).toBeVisible();
+  await expect(panel.locator(".badge")).toHaveText("Sent");
+  await expect(page.getByRole("region", { name: "Email" })).toContainText(
+    "Reminder: invoice GZ-INV-0001",
+  );
+
+  // Two more: cancel one by hand, the other is cancelled by paying in full.
+  for (const day of ["2099-11-30", "2099-10-31"]) {
+    await panel.getByRole("button", { name: "Schedule reminder" }).click();
+    await dialog.getByLabel("Send on").fill(day);
+    await dialog.getByRole("button", { name: "Schedule reminder" }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  await panel
+    .getByRole("button", { name: /Cancel reminder of 30 Nov 2099/ })
+    .click();
+  await expect(page.getByText("Reminder cancelled.")).toBeVisible();
+  await expect(panel).toContainText("Cancelled by an admin.");
+
+  const payments = page.getByRole("region", { name: "Payments" });
+  await payments.getByRole("button", { name: "Record payment" }).click();
+  await payments.getByRole("button", { name: "Save payment" }).click();
+  await expect(payments.locator(".badge")).toHaveText("Paid");
+  await expect(panel).toContainText("Not sent: the invoice was paid.");
+  await expect(
+    panel.getByRole("button", { name: "Schedule reminder" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(panel.locator(".badge", { hasText: "Scheduled" })).toHaveCount(
+    0,
+  );
+});
+test("admins set automatic reminder rules; invoices show their plan and can pause it", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await page
+    .getByLabel("Send invoices from")
+    .fill("accounts@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+
+  const card = page.getByRole("region", { name: "Automatic reminders" });
+  await expect(card).toContainText("Off.");
+  await expect(card.getByLabel("On the due date")).toBeChecked();
+  await expect(card.getByLabel("7 days after the due date")).toBeChecked();
+  await expect(card.getByLabel("14 days after the due date")).toBeChecked();
+  await card.getByLabel("Send reminders automatically").check();
+  await card.getByLabel("14 days after the due date").uncheck();
+  await card.getByLabel("30 days after the due date").check();
+  await card.getByRole("button", { name: "Save automatic reminders" }).click();
+  await expect(page.getByText("Automatic reminders saved.")).toBeVisible();
+  await page.reload();
+  await expect(card).toContainText(
+    "On: on the due date, 7 days after the due date, 30 days after the due date.",
+  );
+
+  // The invoice shows its plan from the due date.
+  await page.goto("/documents/glen-doc-0");
+  await page
+    .getByRole("region", { name: "Payments" })
+    .getByLabel("Due date")
+    .fill("2099-01-10");
+  await page.getByRole("button", { name: "Save due date" }).click();
+  await expect(page.getByText("Due date updated.")).toBeVisible();
+  const panel = page.getByRole("region", { name: "Reminders" });
+  const plan = panel.locator(".auto-plan");
+  await expect(plan.locator("li")).toHaveCount(3);
+  await expect(plan.locator("li").nth(0)).toContainText("10 Jan 2099");
+  await expect(plan.locator("li").nth(1)).toContainText("17 Jan 2099");
+  await expect(plan.locator("li").nth(2)).toContainText("09 Feb 2099");
+  await expect(plan.locator(".badge").first()).toHaveText("Upcoming");
+
+  await plan.getByRole("button", { name: "Pause" }).click();
+  await expect(
+    page.getByText("Automatic reminders paused for this invoice."),
+  ).toBeVisible();
+  await expect(plan).toContainText("paused for this invoice");
+  await expect(plan.locator(".badge").first()).toHaveText("Paused");
+  await plan.getByRole("button", { name: "Resume" }).click();
+  await expect(plan.locator(".badge").first()).toHaveText("Upcoming");
+
+  // A customer without an email address is flagged.
+  await page.goto("/businesses/glen/customers");
+  await page
+    .getByRole("button", { name: "Edit Mahlangu Property Group" })
+    .click();
+  await page.getByLabel("Email", { exact: true }).fill("");
+  await page.getByRole("button", { name: "Save customer" }).click();
+  await expect(page.getByText("Customer saved.")).toBeVisible();
+  await page.goto("/documents/glen-doc-0");
+  await expect(plan).toContainText(
+    "Not sending: Mahlangu Property Group has no email address.",
+  );
+});

@@ -324,6 +324,9 @@ function Chrome({ doc, word }: { doc: BusinessDocument; word: string }) {
 export function ExecutivePage({ doc }: { doc: BusinessDocument }) {
   registerFonts();
   const { issuer, customer } = doc.snapshot;
+  const prices = doc.showItemPrices !== false;
+  // Description takes the price column's width when prices are hidden.
+  const desc = prices ? s.desc : { ...s.desc, width: "66%" };
   const main = issuer.accent;
   const second = issuer.secondaryAccent;
   const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
@@ -395,9 +398,9 @@ export function ExecutivePage({ doc }: { doc: BusinessDocument }) {
       <View>
         {/* `fixed` repeats the heading on each page the table continues onto. */}
         <View style={{ ...s.tableHead, backgroundColor: main }} fixed>
-          <Text style={s.desc}>Description</Text>
+          <Text style={desc}>Description</Text>
           <Text style={s.qty}>Qty</Text>
-          <Text style={s.price}>Price</Text>
+          {prices && <Text style={s.price}>Price</Text>}
           <Text style={s.total}>Total</Text>
         </View>
         {doc.lines.flatMap((line) =>
@@ -407,7 +410,7 @@ export function ExecutivePage({ doc }: { doc: BusinessDocument }) {
               style={{ ...s.row, borderBottomColor: second }}
               wrap={false}
             >
-              <View style={s.desc}>
+              <View style={desc}>
                 <Text>{index ? `${line.name} (continued)` : line.name}</Text>
                 {description && (
                   <Text style={{ ...s.muted, fontSize: 8 }}>{description}</Text>
@@ -418,7 +421,9 @@ export function ExecutivePage({ doc }: { doc: BusinessDocument }) {
                   ? ""
                   : `${line.quantity}${line.unit && line.unit !== "Item" ? ` ${line.unit}` : ""}`}
               </Text>
-              <Text style={s.price}>{index ? "" : money(line.price)}</Text>
+              {prices && (
+                <Text style={s.price}>{index ? "" : money(line.price)}</Text>
+              )}
               <Text style={s.total}>
                 {index ? "" : money(calculate([line], 0).total)}
               </Text>

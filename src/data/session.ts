@@ -4,6 +4,8 @@ export const employee: DemoEmployee = {
   id: "demo-employee",
   name: "Demo employee",
   email: "user@africonnectsolutions.co.za",
+  // The single demo user manages everything.
+  role: "admin",
 };
 export function getSession(): DemoEmployee | null {
   return sessionStorage.getItem(KEY) === employee.id ? employee : null;

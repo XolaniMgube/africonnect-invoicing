@@ -20,6 +20,7 @@ export function DocumentPreview({ doc }: { doc: BusinessDocument }) {
  */
 function ClassicPreview({ doc }: { doc: BusinessDocument }) {
   const { issuer, customer } = doc.snapshot;
+  const prices = doc.showItemPrices !== false;
   const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   const invoice = doc.kind === "invoice";
   const draft = doc.status === "draft";
@@ -104,7 +105,7 @@ function ClassicPreview({ doc }: { doc: BusinessDocument }) {
             <tr>
               <th>Description</th>
               <th className="numeric">Qty / unit</th>
-              <th className="numeric">Unit price</th>
+              {prices && <th className="numeric">Unit price</th>}
               <th className="numeric">Amount</th>
             </tr>
           </thead>
@@ -120,9 +121,11 @@ function ClassicPreview({ doc }: { doc: BusinessDocument }) {
                 <td className="numeric" data-label="Qty / unit">
                   {Number.isFinite(l.quantity) ? l.quantity : "—"} {l.unit}
                 </td>
-                <td className="numeric" data-label="Unit price">
-                  {Number.isFinite(l.price) ? money(l.price) : "—"}
-                </td>
+                {prices && (
+                  <td className="numeric" data-label="Unit price">
+                    {Number.isFinite(l.price) ? money(l.price) : "—"}
+                  </td>
+                )}
                 <td className="numeric" data-label="Amount">
                   {money(calculate([l], 0).total)}
                 </td>
@@ -130,7 +133,7 @@ function ClassicPreview({ doc }: { doc: BusinessDocument }) {
             ))}
             {!doc.lines.length && (
               <tr>
-                <td colSpan={4} className="paper-empty">
+                <td colSpan={prices ? 4 : 3} className="paper-empty">
                   No line items yet.
                 </td>
               </tr>

@@ -32,6 +32,10 @@ Without a `.env.local`, the app runs as the **browser-only demo**:
 
 Demo access is not secure authentication. Use fictional information only. The session lives in `sessionStorage` and survives refreshes in the same tab. Logging out preserves saved business records. Nothing is deployed or connected to the existing POS.
 
+## Deploying changes
+
+See **[DEPLOY.md](DEPLOY.md)**: database migrations (SQL Editor), Edge Functions (`npx supabase functions deploy …`), then the app (push to Vercel), with a log of what production has.
+
 ## Connect Supabase
 
 Setting up a Supabase project takes six steps, all in the Supabase dashboard apart from the first.
@@ -51,6 +55,15 @@ Setting up a Supabase project takes six steps, all in the Supabase dashboard apa
    where email = 'user@africonnectsolutions.co.za';
    ```
 
+   Everyone starts as **Staff**. Make the first **Admin** (after applying [`20261113130000_roles_super_businesses.sql`](supabase/migrations/20261113130000_roles_super_businesses.sql)):
+
+   ```sql
+   update public.employees set role = 'admin'
+   where user_id = (select id from auth.users where email = 'admin@example.com');
+   ```
+
+   After that, Admins change roles, super businesses and access on the **Users & access** page.
+
    To remove someone’s access, delete their row from `public.employees`, or delete the user under **Authentication → Users**.
 
 Then sign in at `http://localhost:3000/login`. The login page no longer shows demo credentials; the sidebar shows the employee’s name.
@@ -62,6 +75,10 @@ Then sign in at `http://localhost:3000/login`. The login page no longer shows de
 The browser talks to Supabase directly with the publishable key, which is public by design. Protection comes from row-level security and triggers in the migration, so these rules hold even for someone calling the API by hand:
 
 - Anonymous visitors can read nothing. Signed-in users who aren’t in `public.employees` can read and change nothing.
+- **Email** (super businesses): only the `send-invoice` function (service role) writes the email log; employees read it for businesses they can see. Invoice PDFs can be saved only as `<business>/<issued invoice>.pdf` for invoices the employee can see, and are never replaced or deleted. The function reads the invoice as the signed-in employee, so the same visibility rules apply.
+- **Receivables** (sidebar, shown when you can see a super business): what super businesses are still owed, most overdue first, with totals, overdue by age (not yet due, 1–30, 31–60, 60+ days) and an owed-by-customer summary, filterable by business and customer. Calculated from payments and due dates; no migration needed.
+- **Payments** (super businesses): issued invoices take payments (amount, date, method, reference) but never more than the balance; payments can be deleted, not edited. Due dates and cancellation are stored beside the invoice, which itself never changes. A cancelled invoice has no payments; an invoice with payments can’t be revised; an invoice replaced by an issued revision is **Superseded** (any business) and takes no payments. Requires [`20261113140000_payments.sql`](supabase/migrations/20261113140000_payments.sql).
+- Employees are **Admin** or **Staff**. Only Admins change roles, mark **super businesses**, or give Staff access to one; there is always at least one Admin. A super business, with its customers, items and documents, is visible only to Admins and to Staff given access. Ordinary businesses are visible to every employee.
 - Only customers and items can be deleted through the API; businesses are archived and documents are kept. A customer used by any invoice or quotation (draft or issued) can’t be deleted (the documents’ foreign key refuses it). Document lines copy item details, so deleting an item never changes a document. Nothing in an archived business can be deleted until it is restored. Requires [`20261112150000_delete_customers_items.sql`](supabase/migrations/20261112150000_delete_customers_items.sql), which also removes item archiving (previously archived items become visible again).
 - Invoice and quotation numbers are unique per business and type. The database assigns the next number on issue, one at a time: one more than the highest issued number, keeping its zero-padding, after the prefix. Drafts neither take nor reserve a number.
 - Issued invoices and quotations are immutable. Editing creates a linked draft revision; the original retains its number, contents, issue time and issuing employee. Issuing the revision assigns the next available number. Drafts are unnumbered and do not reserve numbers. Apply `20261112140000_document_revisions.sql` before using this workflow; it clears old draft numbers and preserves all issued numbers.
@@ -71,6 +88,30 @@ The browser talks to Supabase directly with the publishable key, which is public
 - Logos go to the public `business-logos` bucket (PNG/JPEG, 3 MB). Employees can upload; nobody can overwrite or delete. Each upload gets a new file name, so an issued document keeps the logo it was issued with.
 
 The app also guards against employees overwriting each other. Saving a draft only succeeds if nobody else saved it since it was opened; otherwise the employee is asked to refresh. Archive/restore is stored separately from profile edits.
+
+### Email invoices (your own mailbox)
+
+Super businesses send email from their own mailbox (e.g. Afrihost cPanel: `info@africonnectsolutions.co.za`), through the `send-invoice` Supabase Edge Function ([`supabase/functions/send-invoice`](supabase/functions/send-invoice/index.ts)). No third-party email service is needed.
+
+1. **Apply** [`20261113150000_email.sql`](supabase/migrations/20261113150000_email.sql) and [`20261114120000_mail_settings.sql`](supabase/migrations/20261114120000_mail_settings.sql) (SQL Editor, in that order).
+2. **Deploy the function** (from this folder): `npx supabase login`, `npx supabase link --project-ref <your-project-ref>`, then `npx supabase functions deploy send-invoice --use-api`. Redeploy after changing anything in `supabase/functions`.
+3. **Check deliverability in cPanel:** **Email → Email Deliverability** should show the domain as valid (SPF/DKIM), so mail isn’t marked as spam.
+4. **In the app (as an Admin), for each super business:** Business settings → **Send invoices from** (e.g. `info@africonnectsolutions.co.za`), then **Email sending**: the outgoing server and port from cPanel → **Email Accounts → Connect Devices** (usually `mail.<domain>`, port 465), the mailbox address and its password. The password is stored encrypted in Supabase Vault; only the function can read it.
+5. **Click Send test email.** It emails you from that mailbox, or shows the mail server’s exact error (e.g. a wrong password, or Supabase not reaching the server).
+
+Issuing an invoice of a super business saves its PDF (private `invoice-pdfs` bucket, never overwritten), so emails attach exactly what was issued. Every attempt is logged in `public.email_log` and shown on the invoice. Emails are sent with the business’s **Send invoices from** address as the sender (use the same mailbox as the login) and its contact email as the reply-to address. Shared hosting limits emails per hour; ask Afrihost for the limit before sending in bulk. Emails sent this way don’t appear in the mailbox’s Sent folder.
+
+### Payment reminders
+
+Admins schedule reminders on issued invoices of super businesses (invoice page → **Reminders**). Every day at **12:00 South African time** a scheduled job in Supabase calls the `send-reminders` Edge Function, which emails the reminders due that day through the business’s mailbox, with the invoice PDF attached and that day’s balance. Reminders for invoices that were paid, cancelled or replaced are cancelled instead. **Send now** sends one straight away.
+
+1. **Apply** [`20261114130000_reminders.sql`](supabase/migrations/20261114130000_reminders.sql) (SQL Editor).
+2. **Deploy the function** (the daily job calls it without a login; it checks its own key instead): `npx supabase functions deploy send-reminders --use-api --no-verify-jwt`. Also redeploy `send-invoice`, which shares its code: `npx supabase functions deploy send-invoice --use-api`.
+3. **Start the daily job** (SQL Editor, once, with your project URL): `select public.schedule_daily_reminders('https://<project-ref>.supabase.co');`. Check it under **Integrations → Cron** in the dashboard.
+
+**Automatic reminders** (apply [`20261114140000_reminder_rules.sql`](supabase/migrations/20261114140000_reminder_rules.sql), then redeploy `send-reminders`): in Business settings → **Automatic reminders**, an Admin switches them on and picks the days relative to the due date (default: on the due date, 7 and 14 days after). The 12:00 run then reminds every unpaid issued invoice of that business on those days, to the customer’s email, with the default reminder wording — once per day chosen and invoice. A day missed (e.g. the project was paused) is still sent up to 3 days late. Admins can pause them for one invoice; invoices whose customer has no email address are flagged.
+
+A reminder scheduled for today after 12:00 goes out at the next day’s run (or use **Send now**). One run sends for up to about 100 seconds; anything left over goes the next day. A paused (inactive) free Supabase project runs no jobs.
 
 ### Local Supabase (optional)
 
@@ -153,6 +194,7 @@ These apply to both modes unless marked _(browser-only)_.
 - Business profiles require a name, contact email and address; invoice and quotation prefixes may be empty (plain numbers) or 1–12 letters, numbers or hyphens, and must differ when set; payment and validity periods are whole days from 0 to 365.
 - Tax is optional; the VAT registration number is optional even with a positive VAT rate, on both business profiles and documents. Documents are labelled Invoice/Quotation, never automatically “Tax invoice”. This is a prototype, not accounting/tax compliance software.
 - Issuing deep-copies document identities. Later profile/catalogue edits do not modify issued documents. Converted drafts retain the quotation’s issuer and customer snapshots; explicitly changing the selected customer uses the new customer’s details. Payment dates/terms are regenerated for invoices, and quotation-specific notes are not blindly copied.
+- Each invoice or quotation has **Show item prices on the document** (on by default). When off, the preview and PDF print Description, Qty and Total only, in every template; totals are unchanged. Revisions and converted invoices keep the setting. Apply [`20261113120000_show_item_prices.sql`](supabase/migrations/20261113120000_show_item_prices.sql) in Supabase.
 - Each business chooses a document template in its settings, which only changes how its invoices and quotations look: **Classic** (the original design) or **Executive** (main and second colour, rounded table header and total, payment card, contact footer, and a signature drawn from a signatory name and title in a handwriting font; it leaves out the terms line such as “Payment within 30 days.”). **Preview design** shows a fictional sample invoice before saving. The **Templates** page (sidebar) shows every template and how many businesses use it, with a full preview as an invoice or quotation using fictional sample details, and a sample PDF download. Drafts use the business’s current template; issuing copies it into the snapshot, so issued documents keep their look. Existing businesses and snapshots default to Classic. Apply [`20261112160000_document_templates.sql`](supabase/migrations/20261112160000_document_templates.sql) in Supabase before saving businesses with this version.
 - Logo uploads accept PNG/JPEG up to 2,000 × 2,000 pixels: at most 3 MB with Supabase, and 300 KB in browser-only mode (where the image is kept in the browser’s small local storage). A visible preview confirms the chosen image. In browser-only mode the image itself is stored and copied into snapshots; with Supabase it is uploaded immediately and its permanent URL is stored and copied into snapshots.
 - With Supabase, a failed save leaves the form as it was, shows why (rule broken, connection lost, session expired, someone else changed it) and changes nothing on screen.
@@ -168,7 +210,7 @@ npm run build
 
 Unit tests (`npm test`) cover arithmetic, discounts, validation, storage, mapping, numbering on issue, immutable originals, linked revisions, conversion and business scoping.
 
-Fifty-five database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
+A hundred and twenty-six database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
 
 Run browser tests against an existing local server:
 

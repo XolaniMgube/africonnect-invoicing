@@ -32,6 +32,14 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "archived": false,
+  "is_super": false,
+  "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -62,6 +70,14 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
   "archived": false,
+  "is_super": false,
+  "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -92,6 +108,14 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "archived": false,
+  "is_super": false,
+  "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -122,6 +146,14 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
   "archived": false,
+  "is_super": false,
+  "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -344,6 +376,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -389,6 +422,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000000",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -430,6 +471,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -475,6 +517,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000000",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -516,6 +566,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -795,6 +846,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000000",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -836,6 +895,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -881,6 +941,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000000",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -922,6 +990,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -967,6 +1036,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000000",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1008,6 +1085,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1053,6 +1131,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000001",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1094,6 +1180,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1139,6 +1226,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000001",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1180,6 +1275,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1225,6 +1321,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000001",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1266,6 +1370,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1311,6 +1416,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000001",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1352,6 +1465,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 0,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1397,6 +1511,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000001",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1438,6 +1560,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1483,6 +1606,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000002",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1524,6 +1655,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1569,6 +1701,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000002",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1610,6 +1750,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1655,6 +1796,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000002",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1696,6 +1845,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1741,6 +1891,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000002",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1782,6 +1940,7 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
   "notes": "Thank you for choosing us. All details in this example are fictional.",
   "tax_rate": 15,
   "discount_amount": 0,
+  "show_item_prices": true,
   "lines": [
    {
     "id": "line-0",
@@ -1827,6 +1986,14 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "accountNumber": "DEMO-000002",
     "branch": "DEMO-000",
     "archived": false,
+    "isSuper": false,
+    "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."

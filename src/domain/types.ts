@@ -1,4 +1,84 @@
-export type DemoEmployee = { id: string; name: string; email: string };
+export type Role = "admin" | "staff";
+export type DemoEmployee = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+};
+/** An employee as Admins see them on the Users page. */
+export type EmployeeRecord = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+};
+export type PaymentMethod = "eft" | "cash" | "card" | "other";
+/** Money received against an issued invoice of a super business. */
+export type Payment = {
+  id: string;
+  documentId: string;
+  businessId: string;
+  amount: number;
+  /** YYYY-MM-DD */
+  paidOn: string;
+  method: PaymentMethod;
+  reference: string;
+};
+/**
+ * Follow-up details of an issued invoice, kept apart from the (unchangeable)
+ * invoice itself: a changed due date, or cancellation.
+ */
+export type InvoiceTracking = {
+  documentId: string;
+  /** Overrides the due date stored with the invoice. */
+  dueDate?: string;
+  cancelledAt?: string;
+  cancelReason: string;
+  /** Admins can pause automatic reminders for one invoice. */
+  autoRemindersPaused?: boolean;
+};
+/** One attempt to email an invoice (sent from the send-invoice function). */
+export type EmailLog = {
+  id: string;
+  documentId: string;
+  businessId: string;
+  kind: "invoice" | "reminder";
+  recipients: string[];
+  cc: string[];
+  subject: string;
+  /** "demo": the browser-only demo, nothing was delivered. */
+  status: "sent" | "failed" | "demo";
+  error: string;
+  createdAt: string;
+};
+/** A payment reminder an Admin scheduled for an issued invoice. */
+export type Reminder = {
+  id: string;
+  documentId: string;
+  businessId: string;
+  /** YYYY-MM-DD, South African date; sent at 12:00 that day. */
+  sendOn: string;
+  recipients: string[];
+  cc: string[];
+  subject: string;
+  message: string;
+  status: "scheduled" | "sending" | "sent" | "failed" | "cancelled";
+  error: string;
+  /** Set for automatic reminders: the rule (days after the due date). */
+  ruleOffset?: number;
+  sentAt?: string;
+  createdAt: string;
+};
+/** A super business's own mailbox for sending (Admins only; no password). */
+export type MailSettings = {
+  businessId: string;
+  host: string;
+  port: number;
+  username: string;
+  updatedAt: string;
+};
+/** A Staff member allowed to see a super business (Admins see all). */
+export type BusinessAccess = { businessId: string; userId: string };
 /** The look of a business's invoices and quotations (see `domain/templates.ts`). */
 export type DocumentTemplate = "classic" | "executive";
 export type CompanyPreferences = {
@@ -33,6 +113,14 @@ export type Business = CompanyPreferences & {
   accountNumber: string;
   branch: string;
   archived: boolean;
+  /** Super businesses (e.g. Africonnect itself) get the extra features and are visible only to Admins and Staff given access. */
+  isSuper: boolean;
+  /** Super businesses: “Send invoices from” address (its own mailbox). */
+  emailFrom: string;
+  /** Super businesses (Admins): send reminders automatically. */
+  autoReminders: boolean;
+  /** Days relative to the due date (0 = on it, -3 = 3 days before). */
+  reminderOffsets: number[];
 };
 export type Customer = {
   id: string;
@@ -78,6 +166,8 @@ export type BusinessDocument = {
   notes: string;
   taxRate: number;
   discountAmount: number;
+  /** False prints only Description, Qty and Total (no unit price column). */
+  showItemPrices: boolean;
   lines: LineItem[];
   snapshot: DocumentSnapshot;
   totals: Totals;
@@ -95,6 +185,15 @@ export type Database = {
   customers: Customer[];
   items: ReferenceItem[];
   documents: BusinessDocument[];
+  /** Every employee for Admins; only yourself for Staff. */
+  employees: EmployeeRecord[];
+  access: BusinessAccess[];
+  payments: Payment[];
+  tracking: InvoiceTracking[];
+  emails: EmailLog[];
+  /** Loaded for Admins only. */
+  mailSettings: MailSettings[];
+  reminders: Reminder[];
 };
 export const units = [
   "Item",

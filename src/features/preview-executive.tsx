@@ -25,6 +25,7 @@ export function ExecutiveBand({ className }: { className?: string }) {
  */
 export function ExecutivePreview({ doc }: { doc: BusinessDocument }) {
   const { issuer, customer } = doc.snapshot;
+  const prices = doc.showItemPrices !== false;
   const totals = calculate(doc.lines, doc.taxRate, doc.discountAmount);
   const invoice = doc.kind === "invoice";
   const draft = doc.status === "draft";
@@ -109,7 +110,7 @@ export function ExecutivePreview({ doc }: { doc: BusinessDocument }) {
           <tr>
             <th>Description</th>
             <th>Qty</th>
-            <th>Price</th>
+            {prices && <th>Price</th>}
             <th>Total</th>
           </tr>
         </thead>
@@ -126,13 +127,15 @@ export function ExecutivePreview({ doc }: { doc: BusinessDocument }) {
                 {Number.isFinite(l.quantity) ? l.quantity : "—"}
                 {l.unit && l.unit !== "Item" && ` ${l.unit}`}
               </td>
-              <td>{Number.isFinite(l.price) ? money(l.price) : "—"}</td>
+              {prices && (
+                <td>{Number.isFinite(l.price) ? money(l.price) : "—"}</td>
+              )}
               <td>{money(calculate([l], 0).total)}</td>
             </tr>
           ))}
           {!doc.lines.length && (
             <tr>
-              <td colSpan={4} className="exec-empty">
+              <td colSpan={prices ? 4 : 3} className="exec-empty">
                 No line items yet.
               </td>
             </tr>
