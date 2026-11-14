@@ -98,6 +98,8 @@ export function createFixtures(): Database {
       archived: false,
       isSuper: false,
       emailFrom: "",
+      autoReminders: false,
+      reminderOffsets: [0, 7, 14],
       paymentDays: 30,
       validityDays: 14,
       notes:
@@ -268,5 +270,7 @@ export function createFixtures(): Database {
     payments: [],
     tracking: [],
     emails: [],
+    mailSettings: [],
+    reminders: [],
   };
 }

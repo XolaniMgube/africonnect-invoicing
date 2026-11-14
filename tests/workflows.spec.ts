@@ -1254,3 +1254,212 @@ test("super businesses email issued invoices (recorded as demo in the browser-on
   await page.reload();
   await expect(card.locator(".badge")).toHaveText("Demo");
 });
+test("admins save a super business's own mailbox settings", async ({
+  page,
+}) => {
+  await login(page);
+  // Ordinary business: no email sending section.
+  await page.goto("/businesses/glen/settings");
+  await expect(page.getByRole("region", { name: "Email sending" })).toHaveCount(
+    0,
+  );
+
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await page
+    .getByLabel("Send invoices from")
+    .fill("info@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+  await page.reload();
+
+  const card = page.getByRole("region", { name: "Email sending" });
+  await expect(card).toContainText("Not set up yet");
+  await expect(card).toContainText("Save the mail settings first.");
+  await expect(card.getByLabel("Send test email to")).toHaveValue(
+    "user@africonnectsolutions.co.za",
+  );
+  await expect(
+    card.getByRole("button", { name: "Send test email" }),
+  ).toBeDisabled();
+  // Suggested from the sender address.
+  await expect(card.getByLabel("Outgoing mail server")).toHaveValue(
+    "mail.africonnectsolutions.co.za",
+  );
+  await expect(card.getByLabel("Username (mailbox address)")).toHaveValue(
+    "info@africonnectsolutions.co.za",
+  );
+  await expect(card.getByLabel("Port")).toHaveValue("465");
+  await card.getByRole("button", { name: "Save mail settings" }).click();
+  await expect(card.getByRole("alert")).toContainText(
+    "Enter the mailbox password.",
+  );
+  await card.getByLabel("Mailbox password").fill("secret");
+  await card.getByRole("button", { name: "Save mail settings" }).click();
+  await expect(page.getByText("Mail settings saved.")).toBeVisible();
+  await expect(card.getByLabel("Mailbox password")).toHaveValue("");
+  await expect(card).toContainText("Saved.");
+  await expect(card).not.toContainText("Save the mail settings first.");
+  await card.getByLabel("Send test email to").fill("someone@example.com");
+  // The browser-only demo can't send.
+  await card.getByRole("button", { name: "Send test email" }).click();
+  await expect(
+    page.getByText(/browser-only demo can’t send email/),
+  ).toBeVisible();
+  // Once saved, the password can be left empty.
+  await card.getByLabel("Port").selectOption("587");
+  await card.getByRole("button", { name: "Save mail settings" }).click();
+  await expect(page.getByText("Mail settings saved.")).toBeVisible();
+  await page.reload();
+  await expect(card.getByLabel("Port")).toHaveValue("587");
+});
+test("admins schedule, send and cancel reminders; paying in full cancels the rest", async ({
+  page,
+}) => {
+  page.on("dialog", (dialog) => void dialog.accept());
+  await login(page);
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await page
+    .getByLabel("Send invoices from")
+    .fill("accounts@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+
+  await page.goto("/documents/glen-doc-0");
+  const panel = page.getByRole("region", { name: "Reminders" });
+  await expect(panel).toContainText("No reminders scheduled.");
+  await expect(panel).toContainText("12:00");
+
+  // Schedule one (defaults: customer email, reminder wording without amounts).
+  await panel.getByRole("button", { name: "Schedule reminder" }).click();
+  const dialog = page.getByRole("dialog", { name: /Schedule a reminder/ });
+  await expect(dialog.getByLabel("To")).toHaveValue(
+    "accounts0@glen-customer.example",
+  );
+  await expect(dialog.getByLabel("Subject")).toHaveValue(
+    "Reminder: invoice GZ-INV-0001 from Glen Zamba Construction",
+  );
+  await expect(dialog.getByLabel("Message")).toHaveValue(/friendly reminder/);
+  await dialog.getByLabel("Send on").fill("2099-12-31");
+  await dialog.getByRole("button", { name: "Schedule reminder" }).click();
+  await expect(
+    page.getByText(/Reminder scheduled for 31 Dec 2099 at 12:00/),
+  ).toBeVisible();
+  await expect(panel.locator(".badge")).toHaveText("Scheduled");
+
+  // Send now (the demo records it; nothing is emailed).
+  await panel
+    .getByRole("button", { name: /Send reminder of 31 Dec 2099 now/ })
+    .click();
+  await expect(
+    page.getByText("Demo only: recorded, but nothing was emailed."),
+  ).toBeVisible();
+  await expect(panel.locator(".badge")).toHaveText("Sent");
+  await expect(page.getByRole("region", { name: "Email" })).toContainText(
+    "Reminder: invoice GZ-INV-0001",
+  );
+
+  // Two more: cancel one by hand, the other is cancelled by paying in full.
+  for (const day of ["2099-11-30", "2099-10-31"]) {
+    await panel.getByRole("button", { name: "Schedule reminder" }).click();
+    await dialog.getByLabel("Send on").fill(day);
+    await dialog.getByRole("button", { name: "Schedule reminder" }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  await panel
+    .getByRole("button", { name: /Cancel reminder of 30 Nov 2099/ })
+    .click();
+  await expect(page.getByText("Reminder cancelled.")).toBeVisible();
+  await expect(panel).toContainText("Cancelled by an admin.");
+
+  const payments = page.getByRole("region", { name: "Payments" });
+  await payments.getByRole("button", { name: "Record payment" }).click();
+  await payments.getByRole("button", { name: "Save payment" }).click();
+  await expect(payments.locator(".badge")).toHaveText("Paid");
+  await expect(panel).toContainText("Not sent: the invoice was paid.");
+  await expect(
+    panel.getByRole("button", { name: "Schedule reminder" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(panel.locator(".badge", { hasText: "Scheduled" })).toHaveCount(
+    0,
+  );
+});
+test("admins set automatic reminder rules; invoices show their plan and can pause it", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await page
+    .getByLabel("Send invoices from")
+    .fill("accounts@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+
+  const card = page.getByRole("region", { name: "Automatic reminders" });
+  await expect(card).toContainText("Off.");
+  await expect(card.getByLabel("On the due date")).toBeChecked();
+  await expect(card.getByLabel("7 days after the due date")).toBeChecked();
+  await expect(card.getByLabel("14 days after the due date")).toBeChecked();
+  await card.getByLabel("Send reminders automatically").check();
+  await card.getByLabel("14 days after the due date").uncheck();
+  await card.getByLabel("30 days after the due date").check();
+  await card.getByRole("button", { name: "Save automatic reminders" }).click();
+  await expect(page.getByText("Automatic reminders saved.")).toBeVisible();
+  await page.reload();
+  await expect(card).toContainText(
+    "On: on the due date, 7 days after the due date, 30 days after the due date.",
+  );
+
+  // The invoice shows its plan from the due date.
+  await page.goto("/documents/glen-doc-0");
+  await page
+    .getByRole("region", { name: "Payments" })
+    .getByLabel("Due date")
+    .fill("2099-01-10");
+  await page.getByRole("button", { name: "Save due date" }).click();
+  await expect(page.getByText("Due date updated.")).toBeVisible();
+  const panel = page.getByRole("region", { name: "Reminders" });
+  const plan = panel.locator(".auto-plan");
+  await expect(plan.locator("li")).toHaveCount(3);
+  await expect(plan.locator("li").nth(0)).toContainText("10 Jan 2099");
+  await expect(plan.locator("li").nth(1)).toContainText("17 Jan 2099");
+  await expect(plan.locator("li").nth(2)).toContainText("09 Feb 2099");
+  await expect(plan.locator(".badge").first()).toHaveText("Upcoming");
+
+  await plan.getByRole("button", { name: "Pause" }).click();
+  await expect(
+    page.getByText("Automatic reminders paused for this invoice."),
+  ).toBeVisible();
+  await expect(plan).toContainText("paused for this invoice");
+  await expect(plan.locator(".badge").first()).toHaveText("Paused");
+  await plan.getByRole("button", { name: "Resume" }).click();
+  await expect(plan.locator(".badge").first()).toHaveText("Upcoming");
+
+  // A customer without an email address is flagged.
+  await page.goto("/businesses/glen/customers");
+  await page
+    .getByRole("button", { name: "Edit Mahlangu Property Group" })
+    .click();
+  await page.getByLabel("Email", { exact: true }).fill("");
+  await page.getByRole("button", { name: "Save customer" }).click();
+  await expect(page.getByText("Customer saved.")).toBeVisible();
+  await page.goto("/documents/glen-doc-0");
+  await expect(plan).toContainText(
+    "Not sending: Mahlangu Property Group has no email address.",
+  );
+});

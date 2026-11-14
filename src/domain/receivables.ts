@@ -10,12 +10,14 @@ import type {
   InvoiceTracking,
   Payment,
   PaymentMethod,
+  Reminder,
 } from "./types";
 import { cents, today } from "./documents";
 import {
   validateSendRequest,
   type SendRequest,
 } from "../../supabase/functions/_shared/invoice-email";
+import { validateMailSettings } from "../../supabase/functions/_shared/smtp";
 
 export type InvoiceStatus =
   | "draft"
@@ -141,18 +143,21 @@ export function recordPayment(
     throw new Error("Choose a payment method.");
   if (payment.reference.length > 200)
     throw new Error("Keep the reference to 200 characters or fewer.");
-  return {
-    ...db,
-    payments: [
-      ...db.payments,
-      {
-        ...payment,
-        amount: cents(amount) / 100,
-        reference: payment.reference.trim(),
-        businessId: doc.businessId,
-      },
-    ],
-  };
+  return settleReminders(
+    {
+      ...db,
+      payments: [
+        ...db.payments,
+        {
+          ...payment,
+          amount: cents(amount) / 100,
+          reference: payment.reference.trim(),
+          businessId: doc.businessId,
+        },
+      ],
+    },
+    doc.id,
+  );
 }
 
 export function deletePayment(db: Database, id: string): Database {
@@ -212,10 +217,10 @@ export function cancelInvoice(
     );
   if (reason.length > 500)
     throw new Error("Keep the reason to 500 characters or fewer.");
-  return track(db, documentId, {
-    cancelledAt: at,
-    cancelReason: reason.trim(),
-  });
+  return settleReminders(
+    track(db, documentId, { cancelledAt: at, cancelReason: reason.trim() }),
+    documentId,
+  );
 }
 
 export function restoreInvoice(db: Database, documentId: string): Database {
@@ -343,4 +348,255 @@ export function checkSend(db: Database, request: SendRequest) {
   const errors = validateSendRequest(request);
   if (errors.length) throw new Error(errors.join(" "));
   return doc;
+}
+
+/** Throws unless these mail settings may be saved for this business. */
+export function checkMailSettings(
+  db: Database,
+  settings: {
+    businessId: string;
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+  },
+) {
+  const business = db.businesses.find((b) => b.id === settings.businessId);
+  if (!business?.isSuper)
+    throw new Error("Mail settings are for super businesses.");
+  const saved = db.mailSettings.some(
+    (m) => m.businessId === settings.businessId,
+  );
+  const errors = validateMailSettings(settings, saved);
+  if (errors.length) throw new Error(errors.join(" "));
+  return business;
+}
+
+/** Today's date in South Africa (reminders are dated in local time). */
+export const saToday = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg" }).format(
+    new Date(),
+  );
+
+export const REMINDER_LABELS: Record<Reminder["status"], string> = {
+  scheduled: "Scheduled",
+  sending: "Sending",
+  sent: "Sent",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+/**
+ * Cancels an invoice's scheduled reminders once it's paid in full or
+ * cancelled (the database does the same).
+ */
+export function settleReminders(db: Database, documentId: string): Database {
+  const doc = db.documents.find((d) => d.id === documentId);
+  if (!doc) return db;
+  const reason = isCancelled(db, doc)
+    ? "Not sent: the invoice was cancelled."
+    : amounts(db, doc).balance === 0
+      ? "Not sent: the invoice was paid."
+      : "";
+  if (!reason) return db;
+  return {
+    ...db,
+    reminders: db.reminders.map((r) =>
+      r.documentId === documentId && r.status === "scheduled"
+        ? { ...r, status: "cancelled", error: reason }
+        : r,
+    ),
+  };
+}
+
+export type ReminderInput = Pick<
+  Reminder,
+  "id" | "documentId" | "sendOn" | "recipients" | "cc" | "subject" | "message"
+>;
+
+/** Throws unless this reminder may be scheduled. */
+export function checkReminder(db: Database, input: ReminderInput) {
+  const doc = requireOpen(
+    db,
+    db.documents.find((d) => d.id === input.documentId),
+  );
+  if (isCancelled(db, doc)) throw new Error("This invoice is cancelled.");
+  if (amounts(db, doc).balance === 0)
+    throw new Error("This invoice is already paid.");
+  const business = db.businesses.find((b) => b.id === doc.businessId)!;
+  if (!business.emailFrom.trim())
+    throw new Error(
+      `Set “Send invoices from” in ${business.name}’s business settings first.`,
+    );
+  if (!DATE.test(input.sendOn) || Number.isNaN(Date.parse(input.sendOn)))
+    throw new Error("Choose the date to send the reminder.");
+  if (input.sendOn < saToday())
+    throw new Error("Choose today or a later date.");
+  const errors = validateSendRequest({
+    documentId: input.documentId,
+    to: input.recipients,
+    cc: input.cc,
+    subject: input.subject,
+    message: input.message,
+  });
+  if (errors.length) throw new Error(errors.join(" "));
+  return doc;
+}
+
+export function scheduleReminder(db: Database, input: ReminderInput): Database {
+  const doc = checkReminder(db, input);
+  return {
+    ...db,
+    reminders: [
+      ...db.reminders,
+      {
+        ...input,
+        subject: input.subject.trim(),
+        businessId: doc.businessId,
+        status: "scheduled",
+        error: "",
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  };
+}
+
+export function cancelReminder(db: Database, id: string): Database {
+  const reminder = db.reminders.find((r) => r.id === id);
+  if (!reminder) throw new Error("This reminder no longer exists.");
+  if (reminder.status !== "scheduled")
+    throw new Error("Only a scheduled reminder can be cancelled.");
+  return {
+    ...db,
+    reminders: db.reminders.map((r) =>
+      r.id === id
+        ? { ...r, status: "cancelled", error: "Cancelled by an admin." }
+        : r,
+    ),
+  };
+}
+
+// ───────────────────────────── Automatic reminders ─────────────────────────────
+
+/** The choices offered for automatic reminders (days relative to the due date). */
+export const REMINDER_OFFSETS = [-3, 0, 3, 7, 14, 30, 60];
+
+export const offsetLabel = (offset: number) =>
+  offset === 0
+    ? "On the due date"
+    : offset < 0
+      ? `${-offset} ${offset === -1 ? "day" : "days"} before the due date`
+      : `${offset} ${offset === 1 ? "day" : "days"} after the due date`;
+
+/** A missed day (e.g. the project was paused) is still sent this many days late. */
+export const CATCH_UP_DAYS = 3;
+
+const plusDays = (date: string, days: number) => {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Admin: switch automatic reminders on/off and choose the days. */
+export function setReminderRules(
+  db: Database,
+  businessId: string,
+  enabled: boolean,
+  offsets: number[],
+): Database {
+  const business = db.businesses.find((b) => b.id === businessId);
+  if (!business?.isSuper)
+    throw new Error("Automatic reminders are for super businesses.");
+  const days = [...new Set(offsets)].sort((a, b) => a - b);
+  if (!days.length) throw new Error("Choose at least one day to remind on.");
+  if (days.some((d) => !Number.isInteger(d) || d < -30 || d > 365))
+    throw new Error("Remind between 30 days before and a year after.");
+  if (enabled && !business.emailFrom.trim())
+    throw new Error(
+      `Set “Send invoices from” in ${business.name}’s business settings first.`,
+    );
+  return {
+    ...db,
+    businesses: db.businesses.map((b) =>
+      b.id === businessId
+        ? { ...b, autoReminders: enabled, reminderOffsets: days }
+        : b,
+    ),
+  };
+}
+
+/** Admin: pause or resume automatic reminders for one invoice. */
+export function setAutoRemindersPaused(
+  db: Database,
+  documentId: string,
+  paused: boolean,
+): Database {
+  requireOpen(
+    db,
+    db.documents.find((d) => d.id === documentId),
+  );
+  return track(db, documentId, { autoRemindersPaused: paused });
+}
+
+export type AutoReminderStep = {
+  offset: number;
+  date: string;
+  /** What happened, or will: a sent/failed/cancelled reminder, or none yet. */
+  state: "sent" | "failed" | "cancelled" | "sending" | "upcoming" | "missed";
+  reminder?: Reminder;
+};
+
+/**
+ * The automatic reminders for an invoice: one per rule, on its date (the
+ * daily run sends them at 12:00). Null when automatic reminders don't apply.
+ */
+export function autoReminderPlan(
+  db: Database,
+  doc: BusinessDocument,
+  on = saToday(),
+) {
+  const business = db.businesses.find((b) => b.id === doc.businessId);
+  if (!business?.autoReminders || !tracksPayments(db, doc)) return null;
+  const tracking = trackingOf(db, doc.id);
+  const due = dueDateOf(db, doc);
+  const customer =
+    db.customers.find((c) => c.id === doc.customerId) ?? doc.snapshot.customer;
+  const open =
+    !isCancelled(db, doc) &&
+    !supersededBy(db, doc) &&
+    amounts(db, doc).balance > 0;
+  const blocker = !open
+    ? ""
+    : !business.emailFrom.trim()
+      ? "Not sending: set “Send invoices from” in business settings."
+      : !customer.email.trim()
+        ? `Not sending: ${customer.name} has no email address.`
+        : "";
+  const steps: AutoReminderStep[] = [...business.reminderOffsets]
+    .sort((a, b) => a - b)
+    .map((offset) => {
+      const date = plusDays(due, offset);
+      const reminder = db.reminders.find(
+        (r) => r.documentId === doc.id && r.ruleOffset === offset,
+      );
+      if (reminder)
+        return {
+          offset,
+          date,
+          reminder,
+          state: reminder.status === "scheduled" ? "upcoming" : reminder.status,
+        };
+      return {
+        offset,
+        date,
+        state: plusDays(date, CATCH_UP_DAYS) < on ? "missed" : "upcoming",
+      };
+    });
+  return {
+    open,
+    paused: !!tracking?.autoRemindersPaused,
+    blocker,
+    recipient: customer.email,
+    steps,
+  };
 }

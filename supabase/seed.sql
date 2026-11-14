@@ -34,6 +34,12 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "archived": false,
   "is_super": false,
   "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -66,6 +72,12 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "archived": false,
   "is_super": false,
   "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -98,6 +110,12 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "archived": false,
   "is_super": false,
   "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -130,6 +148,12 @@ select * from jsonb_populate_recordset(null::public.businesses, $seed$
   "archived": false,
   "is_super": false,
   "email_from": "",
+  "auto_reminders": false,
+  "reminder_offsets": [
+   0,
+   7,
+   14
+  ],
   "template": "classic",
   "secondary_accent": "#C9A45C",
   "signatory_name": "",
@@ -400,6 +424,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -489,6 +519,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -812,6 +848,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -901,6 +943,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -990,6 +1038,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1079,6 +1133,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1168,6 +1228,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1257,6 +1323,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1346,6 +1418,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1435,6 +1513,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1524,6 +1608,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1613,6 +1703,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1702,6 +1798,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1791,6 +1893,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."
@@ -1880,6 +1988,12 @@ select * from jsonb_populate_recordset(null::public.documents, $seed$
     "archived": false,
     "isSuper": false,
     "emailFrom": "",
+    "autoReminders": false,
+    "reminderOffsets": [
+     0,
+     7,
+     14
+    ],
     "paymentDays": 30,
     "validityDays": 14,
     "notes": "Thank you for choosing us. All details in this example are fictional."

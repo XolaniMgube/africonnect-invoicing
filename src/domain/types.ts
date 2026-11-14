@@ -34,6 +34,8 @@ export type InvoiceTracking = {
   dueDate?: string;
   cancelledAt?: string;
   cancelReason: string;
+  /** Admins can pause automatic reminders for one invoice. */
+  autoRemindersPaused?: boolean;
 };
 /** One attempt to email an invoice (sent from the send-invoice function). */
 export type EmailLog = {
@@ -48,6 +50,32 @@ export type EmailLog = {
   status: "sent" | "failed" | "demo";
   error: string;
   createdAt: string;
+};
+/** A payment reminder an Admin scheduled for an issued invoice. */
+export type Reminder = {
+  id: string;
+  documentId: string;
+  businessId: string;
+  /** YYYY-MM-DD, South African date; sent at 12:00 that day. */
+  sendOn: string;
+  recipients: string[];
+  cc: string[];
+  subject: string;
+  message: string;
+  status: "scheduled" | "sending" | "sent" | "failed" | "cancelled";
+  error: string;
+  /** Set for automatic reminders: the rule (days after the due date). */
+  ruleOffset?: number;
+  sentAt?: string;
+  createdAt: string;
+};
+/** A super business's own mailbox for sending (Admins only; no password). */
+export type MailSettings = {
+  businessId: string;
+  host: string;
+  port: number;
+  username: string;
+  updatedAt: string;
 };
 /** A Staff member allowed to see a super business (Admins see all). */
 export type BusinessAccess = { businessId: string; userId: string };
@@ -87,8 +115,12 @@ export type Business = CompanyPreferences & {
   archived: boolean;
   /** Super businesses (e.g. Africonnect itself) get the extra features and are visible only to Admins and Staff given access. */
   isSuper: boolean;
-  /** Super businesses: “Send invoices from” address (verified in Resend). */
+  /** Super businesses: “Send invoices from” address (its own mailbox). */
   emailFrom: string;
+  /** Super businesses (Admins): send reminders automatically. */
+  autoReminders: boolean;
+  /** Days relative to the due date (0 = on it, -3 = 3 days before). */
+  reminderOffsets: number[];
 };
 export type Customer = {
   id: string;
@@ -159,6 +191,9 @@ export type Database = {
   payments: Payment[];
   tracking: InvoiceTracking[];
   emails: EmailLog[];
+  /** Loaded for Admins only. */
+  mailSettings: MailSettings[];
+  reminders: Reminder[];
 };
 export const units = [
   "Item",

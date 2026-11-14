@@ -4041,3 +4041,125 @@ th {
   color: #3f5672;
   border: 1px solid #dbe3ee;
 }
+
+/* Own-mailbox settings */
+.mail-card {
+  margin-top: 20px;
+}
+.mail-card h2 {
+  font-size: 17px;
+  margin-bottom: 4px;
+}
+.mail-card > p.muted {
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+.mail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mail-test {
+  margin-top: 4px;
+}
+.mail-blocker {
+  text-align: right;
+  margin-top: 8px;
+}
+
+/* Reminders */
+.reminder-actions {
+  display: flex;
+  gap: 4px;
+}
+.badge.reminder-scheduled,
+.badge.reminder-sending {
+  background: #eef2f7;
+  color: #3f5672;
+  border: 1px solid #dbe3ee;
+}
+.badge.reminder-sent {
+  background: #e9f6ee;
+  color: #227046;
+  border: 1px solid #cfe9d9;
+}
+.badge.reminder-failed {
+  background: #fdecec;
+  color: #b42318;
+  border: 1px solid #f7d0cd;
+}
+.badge.reminder-cancelled {
+  background: #f1f2f0;
+  color: #6b7069;
+  border: 1px solid #e2e4e0;
+}
+
+/* Automatic reminders */
+.auto-toggle {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.auto-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  border: 1px solid #edf0e8;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+}
+.auto-days legend {
+  font-size: 11px;
+  font-weight: 600;
+  color: #45524a;
+  padding: 0 4px;
+}
+.auto-days:disabled {
+  opacity: 0.55;
+}
+.auto-days .checkbox-label {
+  font-size: 12px;
+  white-space: normal;
+}
+.auto-plan {
+  margin: 4px 0 14px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f7f9f4;
+}
+.auto-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.auto-plan-head .btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.auto-plan .email-error {
+  font-size: 12px;
+  margin-top: 6px;
+}
+.auto-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.auto-steps li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid #e7ebe3;
+  font-size: 12px;
+}
+.auto-steps li > span {
+  display: grid;
+  min-width: 0;
+}
+.auto-steps small {
+  font-size: 11px;
+}

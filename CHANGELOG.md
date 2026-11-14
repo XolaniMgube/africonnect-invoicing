@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-14
+
+- Added automatic reminders (super businesses, Admins): Business settings → **Automatic reminders** (on/off, days relative to the due date; default due date, +7, +14). The daily 12:00 run reminds every unpaid issued invoice on those days, once per day chosen, catching up a missed day within 3 days. Invoices show their automatic plan (Upcoming / Sent / Missed…) with **Pause/Resume**, and flag customers without an email address. Apply `20261114140000_reminder_rules.sql` and redeploy `send-reminders`.
+
+- Added scheduled payment reminders (super businesses, Admins): schedule on an issued invoice (date, To, CC, subject, message), cancel, or **Send now**. A daily job at 12:00 SAST (pg_cron) calls the new `send-reminders` Edge Function, which sends through the business’s mailbox with the invoice attached and that day’s balance. Paying in full or cancelling the invoice cancels its scheduled reminders. Apply `20261114130000_reminders.sql`, deploy `send-reminders` (and redeploy `send-invoice`), then run `select public.schedule_daily_reminders('https://<ref>.supabase.co');` once.
+
+- **Send invoice** now emails through the business’s own mailbox (e.g. Afrihost cPanel, port 465) instead of Resend; Resend has been removed. A business without a saved mailbox gets a clear message, and refusals from the mail server are logged with its reason. The mail settings warn when the login differs from “Send invoices from”. Redeploy `send-invoice`.
+
+- Added own-mailbox email settings for super businesses (Admins): outgoing server, port, mailbox and password (encrypted in Supabase Vault, readable only by the send function), and **Send test email**, which emails the admin through that mailbox (e.g. Afrihost cPanel) to prove it works. A small built-in SMTP client; no third-party service. Apply `20261114120000_mail_settings.sql` and redeploy `send-invoice`.
+- Tightened table privileges on tables added since the first migration (Supabase’s defaults granted everything; row-level security already refused those requests).
+
 ## 2026-11-13
 
 - Added emailing invoices for super businesses: **Send invoice** (To, CC, subject, message; PDF attached) and an email history on each issued invoice, a **Send invoices from** setting, and the `send-invoice` Edge Function using Resend. PDFs of issued invoices are saved for emailing. Apply `20261113150000_email.sql`, then follow README → Email invoices (Resend). The browser-only demo records sends as “Demo” without emailing.

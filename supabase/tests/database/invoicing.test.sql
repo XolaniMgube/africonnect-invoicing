@@ -3,7 +3,7 @@
 -- that is rolled back, so no test data is left behind.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(92);
+select plan(126);
 
 -- People: one employee, one signed-in user who is not an employee.
 insert into auth.users (id, email) values
@@ -469,6 +469,145 @@ select throws_ok(
   $$insert into storage.objects (bucket_id, name)
     values ('invoice-pdfs', 'anything/else.pdf')$$,
   '42501', null, 'saved PDFs follow the business/invoice path');
+
+-- ─── Own mailbox (SMTP) settings ───
+select lives_ok(
+  $$select public.set_mail_settings('10000000-0000-4000-8000-000000000001', 'Mail.Example.co.za', 465, 'info@example.co.za', 'secret')$$,
+  'admins save a super business''s mail settings');
+select throws_ok(
+  $$select password_secret from public.mail_settings$$,
+  '42501', null, 'nobody reads the password reference through the API');
+select throws_ok(
+  $$select * from public.mail_settings_for_send('10000000-0000-4000-8000-000000000001')$$,
+  '42501', null, 'only the email function can read the password');
+select ok(
+  not has_table_privilege('anon', 'public.payments', 'select')
+    and not has_table_privilege('authenticated', 'public.payments', 'update')
+    and not has_table_privilege('authenticated', 'public.email_log', 'insert')
+    and not has_table_privilege('authenticated', 'public.mail_settings', 'insert'),
+  'table privileges are limited to what the app uses');
+select lives_ok(
+  $$select public.set_mail_settings('10000000-0000-4000-8000-000000000001', 'mail.example.co.za', 587, 'info@example.co.za', '')$$,
+  'an empty password keeps the saved one');
+select throws_ok(
+  $$select public.set_mail_settings('10000000-0000-4000-8000-0000000000ff', 'mail.example.co.za', 465, 'x@y.co', 'p')$$,
+  'P0001', 'Mail settings are for super businesses.', 'mail settings need a super business');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$select public.set_mail_settings('10000000-0000-4000-8000-000000000001', 'evil.example.com', 465, 'x@y.co', 'p')$$,
+  'P0001', 'Only an admin can change mail settings.', 'staff cannot change mail settings');
+select is((select count(*)::int from public.mail_settings), 0, 'staff cannot see mail settings');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+reset role;
+select is(
+  (select host || ':' || port || ' ' || password from public.mail_settings_for_send('10000000-0000-4000-8000-000000000001')),
+  'mail.example.co.za:587 secret', 'the password is stored encrypted and read back for sending');
+set local role authenticated;
+
+-- ─── Scheduled reminders ───
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select lives_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject)
+    values ('50000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', public.sa_today() + 3, '{client@x.co.za}', 'Reminder')$$, 'admins schedule a reminder');
+select throws_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject)
+    values ('50000000-0000-4000-8000-000000000004', '30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', public.sa_today() + -1, '{client@x.co.za}', 'Reminder')$$,
+  'P0001', 'Choose today or a later date.', 'reminders cannot be scheduled in the past');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select throws_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject)
+    values ('50000000-0000-4000-8000-000000000004', '30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', public.sa_today() + 1, '{client@x.co.za}', 'Reminder')$$,
+  'P0001', 'Only an admin can schedule or cancel reminders.', 'staff cannot schedule reminders');
+update public.reminders set status = 'cancelled' where id = '50000000-0000-4000-8000-000000000001';
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select is((select status from public.reminders where id = '50000000-0000-4000-8000-000000000001'), 'scheduled',
+  'staff cannot cancel reminders');
+select lives_ok($$update public.reminders set status = 'cancelled' where id = '50000000-0000-4000-8000-000000000001'$$,
+  'admins cancel a scheduled reminder');
+select is((select error from public.reminders where id = '50000000-0000-4000-8000-000000000001'), 'Cancelled by an admin.',
+  'a cancelled reminder says who cancelled it');
+select throws_ok($$update public.reminders set status = 'scheduled' where id = '50000000-0000-4000-8000-000000000001'$$,
+  'P0001', 'Only a scheduled reminder can be cancelled.', 'a cancelled reminder stays cancelled');
+select lives_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject)
+    values ('50000000-0000-4000-8000-000000000002', '30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', public.sa_today() + 5, '{client@x.co.za}', 'Reminder')$$, 'another reminder can be scheduled');
+insert into public.business_access (business_id, user_id)
+  values ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select lives_ok(
+  $$insert into public.payments (document_id, business_id, amount, paid_on, method)
+    values ('30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', 65, '2026-11-12', 'eft')$$,
+  'staff can still record the payment that settles an invoice with reminders');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select is(
+  (select status || ': ' || error from public.reminders where id = '50000000-0000-4000-8000-000000000002'),
+  'cancelled: Not sent: the invoice was paid.', 'paying in full cancels scheduled reminders');
+select throws_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject)
+    values ('50000000-0000-4000-8000-000000000004', '30000000-0000-4000-8000-000000000040', '10000000-0000-4000-8000-000000000001', public.sa_today() + 1, '{client@x.co.za}', 'Reminder')$$,
+  'P0001', 'This invoice is already paid.', 'paid invoices take no reminders');
+select lives_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject)
+    values ('50000000-0000-4000-8000-000000000003', '30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', public.sa_today() + 2, '{client@x.co.za}', 'Reminder')$$, 'an unpaid invoice takes a reminder');
+update public.invoice_tracking set cancelled_at = now() where document_id = '30000000-0000-4000-8000-000000000023';
+select is(
+  (select status || ': ' || error from public.reminders where id = '50000000-0000-4000-8000-000000000003'),
+  'cancelled: Not sent: the invoice was cancelled.', 'cancelling the invoice cancels its reminders');
+update public.invoice_tracking set cancelled_at = null where document_id = '30000000-0000-4000-8000-000000000023';
+select throws_ok($$select public.reminder_token_ok('x')$$,
+  '42501', null, 'only the reminders function can check the daily job''s key');
+reset role;
+select ok(
+  public.reminder_token_ok((select decrypted_secret from vault.decrypted_secrets where name = 'reminders_token'))
+    and not public.reminder_token_ok('wrong'),
+  'the daily job''s key is random and checked exactly');
+select throws_ok($$select public.schedule_daily_reminders('http://evil.example.com')$$,
+  'P0001', 'Use the project URL, e.g. https://abcd.supabase.co', 'the daily job only calls a Supabase project');
+select public.schedule_daily_reminders('https://abcd.supabase.co');
+select ok(
+  (select schedule from cron.job where jobname = 'send-due-reminders') = '0 10 * * *'
+    and (select command from cron.job where jobname = 'send-due-reminders')
+        like '%https://abcd.supabase.co/functions/v1/send-reminders%',
+  'the daily job runs at 12:00 South African time (10:00 UTC)');
+set local role authenticated;
+
+-- ─── Automatic reminder rules ───
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select is(
+  (select auto_reminders::text || ' ' || reminder_offsets::text from public.businesses where id = '10000000-0000-4000-8000-000000000001'),
+  'false {0,7,14}', 'automatic reminders start off, with due date, +7 and +14 days');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$update public.businesses set auto_reminders = true where id = '10000000-0000-4000-8000-000000000001'$$,
+  'P0001', 'Only an admin can change automatic reminders.', 'staff cannot switch on automatic reminders');
+select lives_ok(
+  $$update public.businesses set phone = '+27 00 000 0001' where id = '10000000-0000-4000-8000-000000000001'$$,
+  'staff can still edit the rest of the profile');
+select throws_ok(
+  $$insert into public.invoice_tracking (document_id, business_id, auto_reminders_paused)
+    values ('30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', true)
+    on conflict (document_id) do update set auto_reminders_paused = true$$,
+  'P0001', 'Only an admin can pause automatic reminders.', 'staff cannot pause automatic reminders');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-000000000003","role":"authenticated"}';
+set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select lives_ok(
+  $$update public.businesses set auto_reminders = true, reminder_offsets = '{-3,0,30}' where id = '10000000-0000-4000-8000-000000000001'$$,
+  'admins set the rules');
+select throws_ok(
+  $$update public.businesses set reminder_offsets = '{400}' where id = '10000000-0000-4000-8000-000000000001'$$,
+  '23514', null, 'rules stay within 30 days before and a year after the due date');
+select lives_ok(
+  $$update public.invoice_tracking set auto_reminders_paused = true where document_id = '30000000-0000-4000-8000-000000000023'$$,
+  'admins pause automatic reminders for one invoice');
+update public.invoice_tracking set auto_reminders_paused = false where document_id = '30000000-0000-4000-8000-000000000023';
+insert into public.reminders (id, document_id, business_id, send_on, recipients, subject, rule_offset)
+  values ('50000000-0000-4000-8000-000000000009', '30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', public.sa_today() + 1, '{a@b.co}', 'R', 7);
+select is(
+  (select rule_offset from public.reminders where id = '50000000-0000-4000-8000-000000000009'),
+  null, 'reminders made in the app are never automatic ones');
 reset role;
 
 -- ─── Logo storage ───

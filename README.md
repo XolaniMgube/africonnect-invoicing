@@ -32,6 +32,10 @@ Without a `.env.local`, the app runs as the **browser-only demo**:
 
 Demo access is not secure authentication. Use fictional information only. The session lives in `sessionStorage` and survives refreshes in the same tab. Logging out preserves saved business records. Nothing is deployed or connected to the existing POS.
 
+## Deploying changes
+
+See **[DEPLOY.md](DEPLOY.md)**: database migrations (SQL Editor), Edge Functions (`npx supabase functions deploy …`), then the app (push to Vercel), with a log of what production has.
+
 ## Connect Supabase
 
 Setting up a Supabase project takes six steps, all in the Supabase dashboard apart from the first.
@@ -85,25 +89,29 @@ The browser talks to Supabase directly with the publishable key, which is public
 
 The app also guards against employees overwriting each other. Saving a draft only succeeds if nobody else saved it since it was opened; otherwise the employee is asked to refresh. Archive/restore is stored separately from profile edits.
 
-### Email invoices (Resend)
+### Email invoices (your own mailbox)
 
-Super businesses can email issued invoices with the PDF attached. Sending runs in the `send-invoice` Supabase Edge Function ([`supabase/functions/send-invoice`](supabase/functions/send-invoice/index.ts)), which uses [Resend](https://resend.com). Resend’s free plan covers 3 sending domains, 100 emails a day and 3,000 a month.
+Super businesses send email from their own mailbox (e.g. Afrihost cPanel: `info@africonnectsolutions.co.za`), through the `send-invoice` Supabase Edge Function ([`supabase/functions/send-invoice`](supabase/functions/send-invoice/index.ts)). No third-party email service is needed.
 
-1. **Apply** [`20261113150000_email.sql`](supabase/migrations/20261113150000_email.sql) (SQL Editor, as before).
-2. **Verify each sending domain in Resend.** Resend → **Domains → Add domain** (e.g. `africonnectsolutions.co.za`, `luminacube.co.za`). Resend shows a few DNS records (SPF/DKIM, sometimes MX): add them where the domain’s DNS is managed, then click **Verify**. Until a domain is verified, sends from it fail with Resend’s reason in the invoice’s email history.
-3. **Create an API key.** Resend → **API Keys → Create** (“Sending access” is enough).
-4. **Give the key to Supabase and deploy the function** (from this folder, once logged in and linked as in step 2 above):
+1. **Apply** [`20261113150000_email.sql`](supabase/migrations/20261113150000_email.sql) and [`20261114120000_mail_settings.sql`](supabase/migrations/20261114120000_mail_settings.sql) (SQL Editor, in that order).
+2. **Deploy the function** (from this folder): `npx supabase login`, `npx supabase link --project-ref <your-project-ref>`, then `npx supabase functions deploy send-invoice --use-api`. Redeploy after changing anything in `supabase/functions`.
+3. **Check deliverability in cPanel:** **Email → Email Deliverability** should show the domain as valid (SPF/DKIM), so mail isn’t marked as spam.
+4. **In the app (as an Admin), for each super business:** Business settings → **Send invoices from** (e.g. `info@africonnectsolutions.co.za`), then **Email sending**: the outgoing server and port from cPanel → **Email Accounts → Connect Devices** (usually `mail.<domain>`, port 465), the mailbox address and its password. The password is stored encrypted in Supabase Vault; only the function can read it.
+5. **Click Send test email.** It emails you from that mailbox, or shows the mail server’s exact error (e.g. a wrong password, or Supabase not reaching the server).
 
-   ```bash
-   npx supabase secrets set RESEND_API_KEY=re_your_key
-   npx supabase functions deploy send-invoice
-   ```
+Issuing an invoice of a super business saves its PDF (private `invoice-pdfs` bucket, never overwritten), so emails attach exactly what was issued. Every attempt is logged in `public.email_log` and shown on the invoice. Emails are sent with the business’s **Send invoices from** address as the sender (use the same mailbox as the login) and its contact email as the reply-to address. Shared hosting limits emails per hour; ask Afrihost for the limit before sending in bulk. Emails sent this way don’t appear in the mailbox’s Sent folder.
 
-   Never put the Resend key in `.env.local`: it must stay on the server.
+### Payment reminders
 
-5. **Set each super business’s sender.** Business settings → **Send invoices from**, e.g. `info@africonnectsolutions.co.za`. Replies go to the business’s contact email.
+Admins schedule reminders on issued invoices of super businesses (invoice page → **Reminders**). Every day at **12:00 South African time** a scheduled job in Supabase calls the `send-reminders` Edge Function, which emails the reminders due that day through the business’s mailbox, with the invoice PDF attached and that day’s balance. Reminders for invoices that were paid, cancelled or replaced are cancelled instead. **Send now** sends one straight away.
 
-Issuing an invoice of a super business saves its PDF (private `invoice-pdfs` bucket, never overwritten), so emails attach exactly what was issued; **Send invoice** saves it first if it’s missing. Every attempt is logged in `public.email_log` and shown on the invoice.
+1. **Apply** [`20261114130000_reminders.sql`](supabase/migrations/20261114130000_reminders.sql) (SQL Editor).
+2. **Deploy the function** (the daily job calls it without a login; it checks its own key instead): `npx supabase functions deploy send-reminders --use-api --no-verify-jwt`. Also redeploy `send-invoice`, which shares its code: `npx supabase functions deploy send-invoice --use-api`.
+3. **Start the daily job** (SQL Editor, once, with your project URL): `select public.schedule_daily_reminders('https://<project-ref>.supabase.co');`. Check it under **Integrations → Cron** in the dashboard.
+
+**Automatic reminders** (apply [`20261114140000_reminder_rules.sql`](supabase/migrations/20261114140000_reminder_rules.sql), then redeploy `send-reminders`): in Business settings → **Automatic reminders**, an Admin switches them on and picks the days relative to the due date (default: on the due date, 7 and 14 days after). The 12:00 run then reminds every unpaid issued invoice of that business on those days, to the customer’s email, with the default reminder wording — once per day chosen and invoice. A day missed (e.g. the project was paused) is still sent up to 3 days late. Admins can pause them for one invoice; invoices whose customer has no email address are flagged.
+
+A reminder scheduled for today after 12:00 goes out at the next day’s run (or use **Send now**). One run sends for up to about 100 seconds; anything left over goes the next day. A paused (inactive) free Supabase project runs no jobs.
 
 ### Local Supabase (optional)
 
@@ -202,7 +210,7 @@ npm run build
 
 Unit tests (`npm test`) cover arithmetic, discounts, validation, storage, mapping, numbering on issue, immutable originals, linked revisions, conversion and business scoping.
 
-Ninety-two database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
+A hundred and twenty-six database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
 
 Run browser tests against an existing local server:
 

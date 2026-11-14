@@ -15,6 +15,11 @@ import {
 } from "./repository";
 import { convertQuotation, saveDocument } from "../domain/documents";
 import {
+  setReminderRules,
+  setAutoRemindersPaused,
+  cancelReminder,
+  scheduleReminder,
+  checkMailSettings,
   checkSend,
   cancelInvoice,
   deletePayment,
@@ -112,6 +117,84 @@ export function createLocalStore(): Store {
       };
       persistDatabase(localStorage, { ...db, emails: [...db.emails, log] });
       return log;
+    },
+    async saveReminderRules(db, businessId, enabled, offsets) {
+      const next = persistDatabase(
+        localStorage,
+        setReminderRules(db, businessId, enabled, offsets),
+      );
+      return found(next.businesses, businessId);
+    },
+    async setAutoRemindersPaused(db, documentId, paused) {
+      const next = persistDatabase(
+        localStorage,
+        setAutoRemindersPaused(db, documentId, paused),
+      );
+      return next.tracking.find((t) => t.documentId === documentId)!;
+    },
+    async scheduleReminder(db, input) {
+      const next = persistDatabase(localStorage, scheduleReminder(db, input));
+      return found(next.reminders, input.id);
+    },
+    async cancelReminder(db, id) {
+      const next = persistDatabase(localStorage, cancelReminder(db, id));
+      return found(next.reminders, id);
+    },
+    async sendReminderNow(db, id) {
+      // The browser-only demo records it as sent ("Demo" in the email
+      // history); nothing is emailed.
+      const reminder = found(db.reminders, id);
+      if (reminder.status !== "scheduled")
+        throw new Error("This reminder is no longer scheduled.");
+      const log = {
+        id: crypto.randomUUID(),
+        documentId: reminder.documentId,
+        businessId: reminder.businessId,
+        kind: "reminder" as const,
+        recipients: reminder.recipients,
+        cc: reminder.cc,
+        subject: reminder.subject,
+        status: "demo" as const,
+        error: "",
+        createdAt: new Date().toISOString(),
+      };
+      const sent = {
+        ...reminder,
+        status: "sent" as const,
+        sentAt: log.createdAt,
+      };
+      persistDatabase(localStorage, {
+        ...db,
+        emails: [...db.emails, log],
+        reminders: db.reminders.map((r) => (r.id === id ? sent : r)),
+      });
+      return { reminder: sent, log };
+    },
+    async saveMailSettings(db, settings) {
+      checkMailSettings(db, settings);
+      // The demo never stores a password: there's nothing to send with.
+      const saved = {
+        businessId: settings.businessId,
+        host: settings.host.trim().toLowerCase(),
+        port: settings.port,
+        username: settings.username.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      persistDatabase(localStorage, {
+        ...db,
+        mailSettings: [
+          ...db.mailSettings.filter(
+            (m) => m.businessId !== settings.businessId,
+          ),
+          saved,
+        ],
+      });
+      return saved;
+    },
+    async sendTestEmail() {
+      throw new Error(
+        "The browser-only demo can’t send email. Test from the Supabase version of the app.",
+      );
     },
     async saveCustomer(db, customer) {
       const next = persistDatabase(

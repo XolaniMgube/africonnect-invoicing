@@ -29,33 +29,28 @@ One feature at a time: build → you test → next. Ordered by what depends on w
 - [x] Total outstanding, overdue list, overdue by age (not yet due / 1–30 / 31–60 / 60+ days).
 - [x] Owed-by-customer summary; business and customer filters.
 
-## 5. Email setup and “Send invoice” — L (super businesses) ⏸ paused: switching to Afrihost (decision pending your “go”)
+## 5. Email setup and “Send invoice” — L (super businesses) ✅ done
 
-Built (2026-11-13, uncommitted, not yet deployed):
+- [x] **Send invoice** + email history, PDF saved on issue, per-business **Send invoices from**.
+- [x] Each business sends from its own Afrihost mailbox (server, port, mailbox, password encrypted in Vault); **Send test email** (tested ✅ 2026-11-14 via mail.africonnectsolutions.co.za:465 to Gmail inbox).
+- [x] **Send invoice** goes through the mailbox; Resend removed.
+- [x] Redeployed; real invoice email tested ✅ (2026-11-14).
 
-- [x] **Send invoice** on issued invoices of super businesses (To, CC, subject, message; PDF attached) and an email history per invoice.
-- [x] PDF saved when an invoice is issued (private `invoice-pdfs` bucket); per-business **Send invoices from** setting.
-- [x] `send-invoice` Supabase Edge Function, currently sending through **Resend**. Migration `20261113150000_email.sql`.
+## 6. Scheduled reminders — L (super businesses, Admins) ✅ built; set up 2026-11-14, first real run 2026-11-15 12:00
 
-**Where we stopped:** you’d rather not use Resend. Both domains’ mailboxes are on **Afrihost cPanel** (info@africonnectsolutions.co.za; Lumina Cube on luminacube.co.za). Proposed change, waiting for your “go”:
-
-- [ ] Per-business mail settings (Admin only): server (e.g. `mail.africonnectsolutions.co.za`), port 465 (SSL), mailbox address, password. Find them in cPanel → Email Accounts → Connect Devices.
-- [ ] Password stored encrypted in Supabase Vault; only the send function can read it.
-- [ ] Admin **Send test email** button: proves whether Supabase can reach Afrihost (Supabase may block mail ports 25/587; 465 usually works — must be tested).
-- [ ] Function sends through the Afrihost mailbox (SMTP) instead of Resend; Resend kept only as an optional fallback.
-- [ ] **You:** check cPanel → Email Deliverability shows both domains as valid; have the mailbox passwords ready.
-
-## 6. Scheduled reminders — L (super businesses)
-
-- [ ] Schedule reminders per invoice: date, recipient, message.
-- [ ] Daily job (Supabase pg_cron + Edge Function, 08:00 SAST) sends what’s due.
-- [ ] Reminder shows the balance due, with a balance statement (same invoice number).
-- [ ] Reminders cancel themselves when the invoice is paid; failures are logged.
+- [x] Admins schedule reminders per invoice: date, To, CC, subject, message; cancel; **Send now**.
+- [x] Daily job (pg_cron, **12:00 SAST**) → `send-reminders` Edge Function, through the business’s Afrihost mailbox.
+- [x] Invoice PDF attached; the balance as it is on the sending day (same invoice number).
+- [x] Paying in full or cancelling the invoice cancels scheduled reminders; failures are logged with the reason.
+- [ ] **You:** apply `20261114130000_reminders.sql`; deploy `send-reminders` (`--no-verify-jwt`) and redeploy `send-invoice`; run `select public.schedule_daily_reminders('https://yranutsmetnljrxqfwoo.supabase.co');` once (README → Payment reminders).
 - [ ] **Check:** Supabase plan. Free projects can pause when inactive, which would stop reminders.
 
-## 7. Automatic reminder rules — M (super businesses)
+## 7. Automatic reminder rules — M (super businesses, Admins) ✅ built and deployed 2026-11-14
 
-- [ ] Per business, e.g. 3 days before due, on the due date, 7 days after.
+- [x] Per business: on/off and days relative to the due date (default: due date, +7, +14).
+- [x] The 12:00 run reminds every unpaid issued invoice on those days, once per day chosen; a missed day is caught up within 3 days.
+- [x] Per-invoice **Pause/Resume**; invoices show their plan; customers without email are flagged.
+- [x] Migration applied and `send-reminders` redeployed (2026-11-14).
 
 ## Later (optional)
 

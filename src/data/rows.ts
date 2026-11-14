@@ -11,7 +11,9 @@ import type {
   EmployeeRecord,
   EmailLog,
   InvoiceTracking,
+  MailSettings,
   Payment,
+  Reminder,
   PaymentMethod,
   Customer,
   Database,
@@ -42,6 +44,8 @@ export type BusinessRow = {
   archived: boolean;
   is_super: boolean;
   email_from: string;
+  auto_reminders?: boolean;
+  reminder_offsets?: number[];
   template: string;
   secondary_accent: string;
   signatory_name: string;
@@ -124,6 +128,8 @@ export const businessToRow = (b: Business): BusinessRow => ({
   archived: b.archived,
   is_super: b.isSuper,
   email_from: b.emailFrom,
+  auto_reminders: b.autoReminders,
+  reminder_offsets: b.reminderOffsets,
   template: b.template,
   secondary_accent: b.secondaryAccent,
   signatory_name: b.signatoryName,
@@ -155,6 +161,8 @@ export const rowToBusiness = (r: BusinessRow): Business => ({
   archived: Boolean(r.archived),
   isSuper: Boolean(r.is_super),
   emailFrom: s(r.email_from),
+  autoReminders: Boolean(r.auto_reminders),
+  reminderOffsets: (r.reminder_offsets ?? [0, 7, 14]).map(Number),
   ...withDesignDefaults({
     template: r.template as DocumentTemplate,
     secondaryAccent: r.secondary_accent ?? undefined,
@@ -317,6 +325,7 @@ export type TrackingRow = {
   due_date: string | null;
   cancelled_at: string | null;
   cancel_reason: string;
+  auto_reminders_paused?: boolean;
 };
 
 export type EmailRow = {
@@ -342,6 +351,65 @@ export const rowToEmail = (r: EmailRow): EmailLog => ({
   status: r.status === "sent" ? "sent" : "failed",
   error: s(r.error),
   createdAt: s(r.created_at),
+});
+
+export type ReminderRow = {
+  id: string;
+  document_id: string;
+  business_id: string;
+  send_on: string;
+  recipients: string[];
+  cc: string[] | null;
+  subject: string;
+  message: string;
+  status: string;
+  error: string | null;
+  sent_at: string | null;
+  created_at: string;
+  rule_offset?: number | null;
+};
+const REMINDER_STATUSES = [
+  "scheduled",
+  "sending",
+  "sent",
+  "failed",
+  "cancelled",
+];
+export const rowToReminder = (r: ReminderRow): Reminder => {
+  const reminder: Reminder = {
+    id: r.id,
+    documentId: r.document_id,
+    businessId: r.business_id,
+    sendOn: s(r.send_on),
+    recipients: r.recipients ?? [],
+    cc: r.cc ?? [],
+    subject: s(r.subject),
+    message: s(r.message),
+    status: (REMINDER_STATUSES.includes(r.status)
+      ? r.status
+      : "failed") as Reminder["status"],
+    error: s(r.error),
+    createdAt: s(r.created_at),
+  };
+  if (r.sent_at) reminder.sentAt = r.sent_at;
+  if (r.rule_offset !== null && r.rule_offset !== undefined)
+    reminder.ruleOffset = Number(r.rule_offset);
+  return reminder;
+};
+
+export type MailSettingsRow = {
+  business_id: string;
+  host: string;
+  port: number;
+  username: string;
+  updated_at: string;
+};
+export const rowToMailSettings = (r: MailSettingsRow): MailSettings => ({
+  businessId: r.business_id,
+  host: s(r.host),
+  port: n(r.port),
+  username: s(r.username),
+  updatedAt: s(r.updated_at),
 });
 
 export const paymentToRow = (p: Payment): PaymentRow => ({
@@ -371,6 +439,7 @@ export const rowToTracking = (r: TrackingRow): InvoiceTracking => {
   };
   if (r.due_date) t.dueDate = r.due_date;
   if (r.cancelled_at) t.cancelledAt = r.cancelled_at;
+  if (r.auto_reminders_paused) t.autoRemindersPaused = true;
   return t;
 };
 export const trackingToRow = (t: InvoiceTracking): TrackingRow => ({
@@ -378,6 +447,7 @@ export const trackingToRow = (t: InvoiceTracking): TrackingRow => ({
   due_date: t.dueDate ?? null,
   cancelled_at: t.cancelledAt ?? null,
   cancel_reason: t.cancelReason,
+  auto_reminders_paused: t.autoRemindersPaused ?? false,
 });
 
 export const rowToEmployee = (r: EmployeeRow): EmployeeRecord => ({
@@ -398,6 +468,8 @@ export function rowsToDatabase(rows: {
   payments?: PaymentRow[];
   tracking?: TrackingRow[];
   emails?: EmailRow[];
+  mailSettings?: MailSettingsRow[];
+  reminders?: ReminderRow[];
 }): Database {
   return {
     version: 1,
@@ -409,6 +481,8 @@ export function rowsToDatabase(rows: {
     payments: (rows.payments ?? []).map(rowToPayment),
     tracking: (rows.tracking ?? []).map(rowToTracking),
     emails: (rows.emails ?? []).map(rowToEmail),
+    mailSettings: (rows.mailSettings ?? []).map(rowToMailSettings),
+    reminders: (rows.reminders ?? []).map(rowToReminder),
     businesses: rows.businesses.map(rowToBusiness),
     customers: rows.customers.map(rowToCustomer),
     items: rows.items.map(rowToItem),

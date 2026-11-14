@@ -35,6 +35,8 @@ import { validateBusiness } from "@/domain/businesses";
 import type { Business } from "@/domain/types";
 import { DESIGN_DEFAULTS } from "@/domain/templates";
 import { TemplateFields } from "./template-picker";
+import { MailSettingsCard } from "./mail-settings";
+import { AutoRemindersCard } from "./auto-reminders";
 import { CreateDocument, DocumentList } from "./document-list";
 export const newBusiness = (): Business => ({
   id: crypto.randomUUID(),
@@ -55,6 +57,8 @@ export const newBusiness = (): Business => ({
   archived: false,
   isSuper: false,
   emailFrom: "",
+  autoReminders: false,
+  reminderOffsets: [0, 7, 14],
   taxRate: 0,
   invoicePrefix: "INV",
   quotationPrefix: "QUO",
@@ -329,9 +333,15 @@ export function BusinessForm({
             // Archive status is managed from the business list, never by this form.
             archived:
               db?.businesses.find((b) => b.id === form.id)?.archived ?? false,
-            // Likewise super-business status, which only Admins change.
+            // Likewise super-business status and automatic reminders, which
+            // only Admins change (elsewhere).
             isSuper:
               db?.businesses.find((b) => b.id === form.id)?.isSuper ?? false,
+            autoReminders:
+              db?.businesses.find((b) => b.id === form.id)?.autoReminders ??
+              false,
+            reminderOffsets: db?.businesses.find((b) => b.id === form.id)
+              ?.reminderOffsets ?? [0, 7, 14],
           },
           initial ? "Business profile saved." : "Client business added.",
         );
@@ -428,7 +438,7 @@ export function BusinessForm({
           {form.isSuper && (
             <Field
               label="Send invoices from"
-              hint="An address on a domain verified in Resend, e.g. info@africonnectsolutions.co.za. Replies go to the contact email."
+              hint="The mailbox invoices are sent from, e.g. info@africonnectsolutions.co.za. Use the same mailbox under Email sending below. Replies go to the contact email."
             >
               <input
                 type="email"
@@ -585,6 +595,8 @@ export function BusinessSettings() {
       <div className="card settings-card">
         <BusinessForm key={`${b.id}-${b.archived}`} initial={b} />
       </div>
+      <MailSettingsCard key={`mail-${b.id}`} business={b} />
+      <AutoRemindersCard key={`auto-${b.id}`} business={b} />
     </>
   );
 }

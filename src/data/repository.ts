@@ -27,6 +27,8 @@ const businessSchema = z.object({
   archived: z.boolean(),
   isSuper: z.boolean().default(false),
   emailFrom: str.default(""),
+  autoReminders: z.boolean().default(false),
+  reminderOffsets: z.array(num.int()).default([0, 7, 14]),
   logo: str,
   accent: str.regex(/^#[a-f\d]{6}$/i),
   // Design fields arrived later: older saved records get the defaults.
@@ -140,6 +142,7 @@ const schema = z.object({
         dueDate: str.optional(),
         cancelledAt: str.optional(),
         cancelReason: str,
+        autoRemindersPaused: z.boolean().optional(),
       }),
     )
     .default([]),
@@ -160,6 +163,38 @@ const schema = z.object({
       }),
     )
     .default([]),
+  // Added with own-mailbox sending.
+  mailSettings: z
+    .array(
+      z.object({
+        businessId: str,
+        host: str,
+        port: num.int(),
+        username: str,
+        updatedAt: str,
+      }),
+    )
+    .default([]),
+  // Added with reminders.
+  reminders: z
+    .array(
+      z.object({
+        id: str,
+        documentId: str,
+        businessId: str,
+        sendOn: str,
+        recipients: z.array(str),
+        cc: z.array(str),
+        subject: str,
+        message: str,
+        status: z.enum(["scheduled", "sending", "sent", "failed", "cancelled"]),
+        error: str,
+        ruleOffset: num.int().optional(),
+        sentAt: str.optional(),
+        createdAt: str,
+      }),
+    )
+    .default([]),
 });
 export const STORAGE_KEY = "africonnect-invoicing:v1";
 export type StoragePort = Pick<Storage, "getItem" | "setItem">;
@@ -176,7 +211,12 @@ export function parseDatabase(raw: string): Database {
   }
   const businesses = new Set(data.businesses.map((b) => b.id));
   const documents = new Set(data.documents.map((d) => d.id));
-  for (const r of [...data.payments, ...data.tracking, ...data.emails])
+  for (const r of [
+    ...data.payments,
+    ...data.tracking,
+    ...data.emails,
+    ...data.reminders,
+  ])
     if (!documents.has(r.documentId))
       throw new Error("Invalid payment relationship.");
   const people = new Set(data.employees.map((e) => e.id));

@@ -51,6 +51,7 @@ import { CustomerPicker } from "./customer-picker";
 import { DocumentPreview } from "./document-preview";
 import { PaymentsPanel, StatusBadge } from "./payments";
 import { EmailPanel } from "./email";
+import { RemindersPanel } from "./reminders";
 import { revisionBlocked } from "@/domain/receivables";
 import { LineAmounts } from "./line-amounts";
 import { RecordForm, blankCustomer } from "./records";
@@ -358,6 +359,7 @@ function Editor({
           </div>
           <PaymentsPanel doc={doc} />
           <EmailPanel doc={doc} />
+          <RemindersPanel doc={doc} />
           <DocumentPreview doc={doc} />
         </>
       ) : (

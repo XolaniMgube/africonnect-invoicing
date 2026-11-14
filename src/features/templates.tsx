@@ -38,6 +38,8 @@ const SAMPLE_BUSINESS: Business = {
   archived: false,
   isSuper: false,
   emailFrom: "",
+  autoReminders: false,
+  reminderOffsets: [0, 7, 14],
   taxRate: 15,
   invoicePrefix: "INV",
   quotationPrefix: "QUO",

@@ -77,6 +77,27 @@ Kind regards,
 ${details.businessName}`;
 }
 
+export function defaultReminderSubject(number: string, businessName: string) {
+  return `Reminder: invoice ${number} from ${businessName}`;
+}
+
+/** No amounts here: the balance on the day it's sent is added below it. */
+export function defaultReminderMessage(details: {
+  number: string;
+  customerName: string;
+  contact: string;
+  businessName: string;
+}) {
+  return `Good day ${details.contact || details.customerName},
+
+This is a friendly reminder that invoice ${details.number} still has a balance due. The amount and due date are below, and the invoice is attached.
+
+If you’ve already paid, thank you, and please ignore this reminder.
+
+Kind regards,
+${details.businessName}`;
+}
+
 const escapeHtml = (text: string) =>
   text
     .replace(/&/g, "&amp;")

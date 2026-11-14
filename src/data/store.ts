@@ -16,6 +16,8 @@ import type {
   Database,
   ReferenceItem,
   EmailLog,
+  MailSettings,
+  Reminder,
   EmployeeRecord,
   InvoiceTracking,
   Payment,
@@ -23,6 +25,7 @@ import type {
 } from "../domain/types";
 import { linkConversions } from "./rows";
 import type { SendRequest } from "../../supabase/functions/_shared/invoice-email";
+import type { ReminderInput } from "../domain/receivables";
 
 export type Employee = {
   id: string;
@@ -86,6 +89,39 @@ export interface Store {
     cancelled: boolean,
     reason: string,
   ): Promise<InvoiceTracking>;
+  /** Admin only. An empty password keeps the saved one. */
+  saveMailSettings(
+    db: Database,
+    settings: Omit<MailSettings, "updatedAt"> & { password: string },
+  ): Promise<MailSettings>;
+  /** Admin only: emails the signed-in admin through the saved mailbox. */
+  sendTestEmail(
+    db: Database,
+    businessId: string,
+    to: string,
+  ): Promise<{ to: string }>;
+  /** Admin only: automatic reminders on/off and their days. */
+  saveReminderRules(
+    db: Database,
+    businessId: string,
+    enabled: boolean,
+    offsets: number[],
+  ): Promise<Business>;
+  /** Admin only: pause or resume one invoice's automatic reminders. */
+  setAutoRemindersPaused(
+    db: Database,
+    documentId: string,
+    paused: boolean,
+  ): Promise<InvoiceTracking>;
+  /** Admin only: a payment reminder for an issued invoice with a balance. */
+  scheduleReminder(db: Database, input: ReminderInput): Promise<Reminder>;
+  /** Admin only. */
+  cancelReminder(db: Database, id: string): Promise<Reminder>;
+  /** Admin only: sends a scheduled reminder now instead of on its date. */
+  sendReminderNow(
+    db: Database,
+    id: string,
+  ): Promise<{ reminder: Reminder; log: EmailLog | null }>;
   /** Emails an issued invoice of a super business, with its PDF. */
   sendInvoice(db: Database, request: SendRequest): Promise<EmailLog>;
   saveCustomer(db: Database, customer: Customer): Promise<Customer>;

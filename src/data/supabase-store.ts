@@ -13,6 +13,11 @@ import type {
 import type { BusinessDocument, Database } from "../domain/types";
 import { convertQuotation, saveDocument } from "../domain/documents";
 import {
+  setReminderRules,
+  setAutoRemindersPaused,
+  cancelReminder,
+  checkReminder,
+  checkMailSettings,
   checkSend,
   tracksPayments,
   cancelInvoice,
@@ -44,7 +49,11 @@ import {
   rowsToDatabase,
   rowToEmployee,
   rowToEmail,
+  rowToMailSettings,
+  rowToReminder,
+  type ReminderRow,
   type EmailRow,
+  type MailSettingsRow,
   paymentToRow,
   rowToPayment,
   rowToTracking,
@@ -188,6 +197,37 @@ async function saveTracking(
 }
 
 /**
+ * Calls the send-invoice Edge Function. `failure` carries the function's own
+ * explanation (and, for refused invoice emails, the logged attempt).
+ */
+async function callSendFunction<T>(
+  body: object,
+  name = "send-invoice",
+): Promise<{
+  data: T | null;
+  failure: { error?: string; log?: unknown } | null;
+}> {
+  let result;
+  try {
+    result = await supabase().functions.invoke<T>(name, { body });
+  } catch {
+    throw new Error(OFFLINE);
+  }
+  if (!result.error) return { data: result.data, failure: null };
+  const context = (result.error as { context?: Response }).context;
+  const failure = await context
+    ?.clone()
+    .json()
+    .catch(() => null);
+  if (failure) return { data: null, failure };
+  if (/Failed to send a request|fetch/i.test(result.error.message))
+    throw new Error(
+      `Couldn’t reach the email service. Check your connection, or ask an administrator to deploy the ${name} function.`,
+    );
+  throw new Error(result.error.message || "The email service failed.");
+}
+
+/**
  * Saves an issued invoice's PDF once (later emails and reminders attach this
  * exact file). An existing file is kept: issued invoices never change.
  */
@@ -323,29 +363,48 @@ export function createSupabaseStore(): Store {
       ]);
       const businesses = await selectAll<BusinessRow>("businesses");
       // Admins get every employee and access row; Staff only their own.
-      const [employees, access, payments, tracking, emails] = await Promise.all(
-        [
-          optionalRows<EmployeeRow>(
-            supabase().from("employees").select("*").order("full_name"),
-          ),
-          optionalRows<AccessRow>(
-            supabase().from("business_access").select("business_id, user_id"),
-          ),
-          optionalRows<PaymentRow>(
-            supabase().from("payments").select("*").order("paid_on"),
-          ),
-          optionalRows<TrackingRow>(
-            supabase().from("invoice_tracking").select("*"),
-          ),
-          optionalRows<EmailRow>(
-            supabase()
-              .from("email_log")
-              .select("*")
-              .order("created_at", { ascending: false })
-              .limit(1000),
-          ),
-        ],
-      );
+      const [
+        employees,
+        access,
+        payments,
+        tracking,
+        emails,
+        reminders,
+        mailSettings,
+      ] = await Promise.all([
+        optionalRows<EmployeeRow>(
+          supabase().from("employees").select("*").order("full_name"),
+        ),
+        optionalRows<AccessRow>(
+          supabase().from("business_access").select("business_id, user_id"),
+        ),
+        optionalRows<PaymentRow>(
+          supabase().from("payments").select("*").order("paid_on"),
+        ),
+        optionalRows<TrackingRow>(
+          supabase().from("invoice_tracking").select("*"),
+        ),
+        optionalRows<EmailRow>(
+          supabase()
+            .from("email_log")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(1000),
+        ),
+        optionalRows<ReminderRow>(
+          supabase()
+            .from("reminders")
+            .select("*")
+            .order("send_on", { ascending: false })
+            .limit(2000),
+        ),
+        // Admins only (row-level security); Staff get none.
+        optionalRows<MailSettingsRow>(
+          supabase()
+            .from("mail_settings")
+            .select("business_id, host, port, username, updated_at"),
+        ),
+      ]);
       const db = rowsToDatabase({
         businesses,
         customers,
@@ -356,6 +415,8 @@ export function createSupabaseStore(): Store {
         payments,
         tracking,
         emails,
+        mailSettings,
+        reminders,
       });
       try {
         return parseDatabase(JSON.stringify(db));
@@ -376,7 +437,9 @@ export function createSupabaseStore(): Store {
           await must(
             supabase()
               .from("businesses")
-              .insert(omit(row, "is_super"))
+              .insert(
+                omit(row, "is_super", "auto_reminders", "reminder_offsets"),
+              )
               .select()
               .single(),
           ),
@@ -387,7 +450,17 @@ export function createSupabaseStore(): Store {
         await must(
           supabase()
             .from("businesses")
-            .update(omit(row, "id", "archived", "is_super"))
+            // Automatic reminders are changed by Admins on their own card.
+            .update(
+              omit(
+                row,
+                "id",
+                "archived",
+                "is_super",
+                "auto_reminders",
+                "reminder_offsets",
+              ),
+            )
             .eq("id", row.id)
             .select()
             .single(),
@@ -491,29 +564,128 @@ export function createSupabaseStore(): Store {
     async sendInvoice(db, request) {
       const doc = checkSend(db, request);
       await saveInvoicePdf(doc);
-      const { data, error } = await supabase().functions.invoke<{
-        log?: EmailRow;
-        error?: string;
-      }>("send-invoice", { body: request });
-      if (error) {
-        // The function's own explanation, when it gave one.
-        const context = (error as { context?: Response }).context;
-        const body = await context
-          ?.clone()
-          .json()
-          .catch(() => null);
-        // Resend refused it: the attempt is logged, show it as failed.
-        if (body?.log) return rowToEmail(body.log);
-        if (body?.error) throw new Error(body.error);
-        if (/Failed to send a request|fetch/i.test(error.message))
-          throw new Error(
-            "Couldn’t reach the email service. Check your connection, or ask an administrator to deploy the send-invoice function.",
-          );
-        throw new Error(error.message || "The invoice could not be sent.");
-      }
-      if (!data?.log)
-        throw new Error(data?.error || "The invoice could not be sent.");
-      return rowToEmail(data.log);
+      const { data, failure } = await callSendFunction<{ log?: EmailRow }>(
+        request,
+      );
+      // Refused by the mail server: the attempt is logged, show it as failed.
+      const log = data?.log ?? failure?.log;
+      if (log) return rowToEmail(log as EmailRow);
+      throw new Error(failure?.error || "The invoice could not be sent.");
+    },
+
+    async saveReminderRules(db, businessId, enabled, offsets) {
+      const next = setReminderRules(db, businessId, enabled, offsets);
+      const business = found(next.businesses, businessId);
+      return rowToBusiness(
+        await must(
+          supabase()
+            .from("businesses")
+            .update({
+              auto_reminders: business.autoReminders,
+              reminder_offsets: business.reminderOffsets,
+            })
+            .eq("id", businessId)
+            .select()
+            .single(),
+        ),
+      );
+    },
+
+    async setAutoRemindersPaused(db, documentId, paused) {
+      return saveTracking(
+        setAutoRemindersPaused(db, documentId, paused),
+        documentId,
+      );
+    },
+
+    async scheduleReminder(db, input) {
+      const doc = checkReminder(db, input);
+      // The daily run attaches the saved PDF, so make sure it exists now.
+      await saveInvoicePdf(doc);
+      return rowToReminder(
+        await must(
+          supabase()
+            .from("reminders")
+            .insert({
+              id: input.id,
+              document_id: doc.id,
+              business_id: doc.businessId,
+              send_on: input.sendOn,
+              recipients: input.recipients,
+              cc: input.cc,
+              subject: input.subject.trim(),
+              message: input.message,
+            })
+            .select()
+            .single(),
+        ),
+      );
+    },
+
+    async cancelReminder(db, id) {
+      cancelReminder(db, id);
+      return rowToReminder(
+        await must(
+          supabase()
+            .from("reminders")
+            .update({ status: "cancelled" })
+            .eq("id", id)
+            .eq("status", "scheduled")
+            .select()
+            .single(),
+        ),
+      );
+    },
+
+    async sendReminderNow(db, id) {
+      const reminder = found(db.reminders, id);
+      if (reminder.status !== "scheduled")
+        throw new Error("This reminder is no longer scheduled.");
+      await saveInvoicePdf(found(db.documents, reminder.documentId));
+      const { data, failure } = await callSendFunction<{
+        reminder?: ReminderRow;
+        log?: EmailRow | null;
+      }>({ reminderId: id }, "send-reminders");
+      if (!data?.reminder)
+        throw new Error(failure?.error || "The reminder could not be sent.");
+      return {
+        reminder: rowToReminder(data.reminder),
+        log: data.log ? rowToEmail(data.log) : null,
+      };
+    },
+
+    async saveMailSettings(db, settings) {
+      checkMailSettings(db, settings);
+      await maybe(
+        supabase().rpc("set_mail_settings", {
+          target: settings.businessId,
+          mail_host: settings.host.trim(),
+          mail_port: settings.port,
+          mail_username: settings.username.trim(),
+          mail_password: settings.password,
+        }),
+      );
+      return rowToMailSettings(
+        await must(
+          supabase()
+            .from("mail_settings")
+            .select("business_id, host, port, username, updated_at")
+            .eq("business_id", settings.businessId)
+            .single(),
+        ),
+      );
+    },
+
+    async sendTestEmail(db, businessId, to) {
+      if (!db.mailSettings.some((m) => m.businessId === businessId))
+        throw new Error("Save the mail settings first.");
+      const { data, failure } = await callSendFunction<{ to?: string }>({
+        action: "test",
+        businessId,
+        to,
+      });
+      if (data?.to) return { to: data.to };
+      throw new Error(failure?.error || "The test email failed.");
     },
 
     async saveCustomer(db, customer) {

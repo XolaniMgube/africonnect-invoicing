@@ -51,9 +51,17 @@ import {
   setDueDate,
   summarise,
   checkSend,
+  checkMailSettings,
+  cancelReminder,
+  saToday,
+  scheduleReminder,
+  autoReminderPlan,
+  setAutoRemindersPaused,
+  setReminderRules,
 } from "../src/domain/receivables";
 import {
   defaultMessage,
+  defaultReminderMessage,
   emailBody,
   parseRecipients,
   pdfName,
@@ -665,6 +673,223 @@ test("invoice emails: recipients, wording, escaping and send checks", () => {
     () => checkSend(setSuper(db, "glen", false), request),
     /super businesses/,
   );
+});
+test("own-mailbox settings: super businesses only, password kept once saved", () => {
+  let db = createFixtures();
+  const settings = {
+    businessId: "glen",
+    host: "mail.africonnectsolutions.co.za",
+    port: 465,
+    username: "info@africonnectsolutions.co.za",
+    password: "secret",
+  };
+  assert.throws(() => checkMailSettings(db, settings), /super businesses/);
+  db = setSuper(db, "glen", true);
+  assert.equal(checkMailSettings(db, settings).id, "glen");
+  assert.throws(
+    () => checkMailSettings(db, { ...settings, password: "" }),
+    /Enter the mailbox password/,
+  );
+  assert.throws(
+    () => checkMailSettings(db, { ...settings, port: 25 }),
+    /Use port 465/,
+  );
+  assert.throws(
+    () => checkMailSettings(db, { ...settings, host: "not a host" }),
+    /outgoing mail server/,
+  );
+  assert.throws(
+    () => checkMailSettings(db, { ...settings, username: "info" }),
+    /full email address/,
+  );
+  // Once saved, an empty password means "keep it".
+  db = {
+    ...db,
+    mailSettings: [
+      {
+        businessId: "glen",
+        host: settings.host,
+        port: 465,
+        username: settings.username,
+        updatedAt: "2026-11-14T08:00:00Z",
+      },
+    ],
+  };
+  assert.doesNotThrow(() =>
+    checkMailSettings(db, { ...settings, password: "" }),
+  );
+  assert.doesNotThrow(() => parseDatabase(JSON.stringify(db)));
+});
+test("reminders: scheduling rules and automatic cancellation", () => {
+  let db = setSuper(createFixtures(), "glen", true);
+  const inv = db.documents.find(
+    (d) =>
+      d.businessId === "glen" && d.kind === "invoice" && d.status === "issued",
+  )!;
+  const input = (id: string, sendOn = saToday()) => ({
+    id,
+    documentId: inv.id,
+    sendOn,
+    recipients: ["client@customer.example"],
+    cc: [],
+    subject: "Reminder",
+    message: defaultReminderMessage({
+      number: inv.number,
+      customerName: "Mahlangu",
+      contact: "",
+      businessName: "Glen",
+    }),
+  });
+  assert.throws(() => scheduleReminder(db, input("r1")), /Send invoices from/);
+  db = upsertBusiness(db, {
+    ...db.businesses.find((b) => b.id === "glen")!,
+    emailFrom: "accounts@africonnectsolutions.co.za",
+  });
+  assert.throws(
+    () => scheduleReminder(db, input("r1", "2020-01-01")),
+    /today or a later/,
+  );
+  assert.throws(
+    () => scheduleReminder(db, { ...input("r1"), recipients: [] }),
+    /at least one recipient/,
+  );
+  db = scheduleReminder(db, input("r1"));
+  db = scheduleReminder(db, input("r2", "2099-12-31"));
+  assert.deepEqual(
+    db.reminders.map((r) => [r.id, r.status, r.businessId]),
+    [
+      ["r1", "scheduled", "glen"],
+      ["r2", "scheduled", "glen"],
+    ],
+  );
+  assert.doesNotThrow(() => parseDatabase(JSON.stringify(db)));
+  db = cancelReminder(db, "r1");
+  assert.equal(db.reminders[0].error, "Cancelled by an admin.");
+  assert.throws(() => cancelReminder(db, "r1"), /Only a scheduled reminder/);
+
+  // A part-payment keeps it; paying in full cancels it.
+  db = recordPayment(db, {
+    id: "p1",
+    documentId: inv.id,
+    amount: 100,
+    paidOn: "2026-11-10",
+    method: "eft",
+    reference: "",
+  });
+  assert.equal(db.reminders[1].status, "scheduled");
+  db = recordPayment(db, {
+    id: "p2",
+    documentId: inv.id,
+    amount: amounts(db, inv).balance,
+    paidOn: "2026-11-10",
+    method: "eft",
+    reference: "",
+  });
+  assert.deepEqual(
+    [db.reminders[1].status, db.reminders[1].error],
+    ["cancelled", "Not sent: the invoice was paid."],
+  );
+  assert.throws(() => scheduleReminder(db, input("r3")), /already paid/);
+
+  // Cancelling the invoice cancels its reminders.
+  db = { ...db, payments: [] };
+  db = scheduleReminder(db, input("r4"));
+  db = cancelInvoice(db, inv.id, "");
+  assert.equal(
+    db.reminders.find((r) => r.id === "r4")!.error,
+    "Not sent: the invoice was cancelled.",
+  );
+  // The default message has no amounts: the balance is added when it's sent.
+  assert.doesNotMatch(input("x").message, /R\s?\d/);
+  // Older data without reminders loads.
+  const legacy = JSON.parse(JSON.stringify(db));
+  delete legacy.reminders;
+  assert.deepEqual(parseDatabase(JSON.stringify(legacy)).reminders, []);
+});
+test("automatic reminders: rules, pause and the plan shown on an invoice", () => {
+  let db = setSuper(createFixtures(), "glen", true);
+  const inv = db.documents.find(
+    (d) =>
+      d.businessId === "glen" && d.kind === "invoice" && d.status === "issued",
+  )!;
+  assert.throws(
+    () => setReminderRules(db, "green", true, [0]),
+    /super businesses/,
+  );
+  assert.throws(
+    () => setReminderRules(db, "glen", true, [0]),
+    /Send invoices from/,
+  );
+  db = upsertBusiness(db, {
+    ...db.businesses.find((b) => b.id === "glen")!,
+    emailFrom: "accounts@africonnectsolutions.co.za",
+  });
+  assert.throws(
+    () => setReminderRules(db, "glen", true, []),
+    /at least one day/,
+  );
+  assert.throws(
+    () => setReminderRules(db, "glen", true, [400]),
+    /a year after/,
+  );
+  assert.equal(autoReminderPlan(db, inv), null); // off by default
+  db = setReminderRules(db, "glen", true, [14, 0, 7, 7]);
+  assert.deepEqual(
+    db.businesses.find((b) => b.id === "glen")!.reminderOffsets,
+    [0, 7, 14],
+  );
+  // Profile edits keep the rules.
+  db = upsertBusiness(db, {
+    ...db.businesses.find((b) => b.id === "glen")!,
+    phone: "1",
+  });
+  assert.equal(db.businesses.find((b) => b.id === "glen")!.autoReminders, true);
+
+  db = setDueDate(db, inv.id, "2026-12-01");
+  let plan = autoReminderPlan(db, inv, "2026-12-10")!;
+  assert.deepEqual(
+    plan.steps.map((s) => [s.date, s.state]),
+    [
+      ["2026-12-01", "missed"], // more than 3 days ago, never sent
+      ["2026-12-08", "upcoming"], // within the catch-up window
+      ["2026-12-15", "upcoming"],
+    ],
+  );
+  assert.equal(plan.recipient, "accounts0@glen-customer.example");
+  assert.equal(plan.blocker, "");
+  // A sent automatic reminder shows against its rule.
+  db = {
+    ...db,
+    reminders: [
+      {
+        id: "a7",
+        documentId: inv.id,
+        businessId: "glen",
+        sendOn: "2026-12-08",
+        recipients: [],
+        cc: [],
+        subject: "",
+        message: "",
+        status: "sent",
+        error: "",
+        ruleOffset: 7,
+        createdAt: "",
+      },
+    ],
+  };
+  plan = autoReminderPlan(db, inv, "2026-12-10")!;
+  assert.equal(plan.steps[1].state, "sent");
+  db = setAutoRemindersPaused(db, inv.id, true);
+  assert.equal(autoReminderPlan(db, inv)!.paused, true);
+  // No customer email: flagged.
+  db = {
+    ...db,
+    customers: db.customers.map((c) =>
+      c.id === inv.customerId ? { ...c, email: "" } : c,
+    ),
+  };
+  assert.match(autoReminderPlan(db, inv)!.blocker, /has no email address/);
+  assert.doesNotThrow(() => parseDatabase(JSON.stringify(db)));
 });
 test("invalid dates, prices, quantities, tax and missing issuer details are rejected", () => {
   const db = createFixtures();
