@@ -17,7 +17,6 @@ import {
   ChevronsUpDown,
   LayoutTemplate,
   ShieldCheck,
-  Wallet,
 } from "lucide-react";
 import { hasVisibleUnsavedChanges } from "./unsaved";
 import { useData } from "./provider";
@@ -100,7 +99,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
   if (path === "/overview") crumbs.push({ label: "Overview" });
   else if (path === "/templates") crumbs.push({ label: "Templates" });
   else if (path === "/admin") crumbs.push({ label: "Users & access" });
-  else if (path === "/receivables") crumbs.push({ label: "Receivables" });
   else if (path === "/help")
     crumbs.push({ label: local ? "Help & demo guide" : "Help" });
   else if (path.startsWith("/businesses") || openDoc) {
@@ -153,16 +151,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {db?.businesses.filter((b) => !b.archived).length || 0}
           </span>
         </NavLink>
-        {db?.businesses.some((b) => b.isSuper) && (
-          <NavLink
-            href="/receivables"
-            active={path === "/receivables"}
-            onNavigate={close}
-          >
-            <Wallet size={19} />
-            <span>Receivables</span>
-          </NavLink>
-        )}
         <NavLink
           href="/templates"
           active={path === "/templates"}

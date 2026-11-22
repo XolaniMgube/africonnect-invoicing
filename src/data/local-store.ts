@@ -15,6 +15,7 @@ import {
 } from "./repository";
 import { convertQuotation, saveDocument } from "../domain/documents";
 import {
+  nextInSeries,
   setReminderRules,
   setAutoRemindersPaused,
   cancelReminder,
@@ -163,12 +164,17 @@ export function createLocalStore(): Store {
         status: "sent" as const,
         sentAt: log.createdAt,
       };
+      // A repeating reminder schedules its next one (as the daily run does).
+      const next = nextInSeries(sent);
       persistDatabase(localStorage, {
         ...db,
         emails: [...db.emails, log],
-        reminders: db.reminders.map((r) => (r.id === id ? sent : r)),
+        reminders: [
+          ...db.reminders.map((r) => (r.id === id ? sent : r)),
+          ...(next ? [next] : []),
+        ],
       });
-      return { reminder: sent, log };
+      return { reminder: sent, log, next };
     },
     async saveMailSettings(db, settings) {
       checkMailSettings(db, settings);

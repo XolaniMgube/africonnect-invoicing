@@ -18,6 +18,10 @@ import {
   type SendRequest,
 } from "../../supabase/functions/_shared/invoice-email";
 import { validateMailSettings } from "../../supabase/functions/_shared/smtp";
+import {
+  MAX_REPEAT_EVERY,
+  nextReminderDate,
+} from "../../supabase/functions/_shared/working-days";
 
 export type InvoiceStatus =
   | "draft"
@@ -239,100 +243,6 @@ export function revisionBlocked(db: Database, doc: BusinessDocument) {
     : "";
 }
 
-export type AgeBucket = "current" | "1-30" | "31-60" | "60+";
-export const AGE_BUCKETS: { id: AgeBucket; label: string }[] = [
-  { id: "current", label: "Not yet due" },
-  { id: "1-30", label: "1–30 days overdue" },
-  { id: "31-60", label: "31–60 days overdue" },
-  { id: "60+", label: "60+ days overdue" },
-];
-
-export type OpenInvoice = {
-  doc: BusinessDocument;
-  dueDate: string;
-  /** 0 when not yet due. */
-  daysOverdue: number;
-  bucket: AgeBucket;
-  balance: number;
-};
-
-const DAY = 86_400_000;
-const daysBetween = (from: string, to: string) =>
-  Math.round(
-    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY,
-  );
-
-/**
- * Every issued invoice of a super business that still has money owing (not
- * paid, cancelled or superseded), most overdue first.
- */
-export function openInvoices(db: Database, on = today()): OpenInvoice[] {
-  return db.documents
-    .filter((doc) =>
-      ["unpaid", "partial", "overdue"].includes(invoiceStatus(db, doc, on)),
-    )
-    .map((doc) => {
-      const dueDate = dueDateOf(db, doc);
-      const daysOverdue = Math.max(daysBetween(dueDate, on), 0);
-      const bucket: AgeBucket =
-        daysOverdue === 0
-          ? "current"
-          : daysOverdue <= 30
-            ? "1-30"
-            : daysOverdue <= 60
-              ? "31-60"
-              : "60+";
-      return {
-        doc,
-        dueDate,
-        daysOverdue,
-        bucket,
-        balance: amounts(db, doc).balance,
-      };
-    })
-    .sort(
-      (a, b) =>
-        b.daysOverdue - a.daysOverdue || a.dueDate.localeCompare(b.dueDate),
-    );
-}
-
-/** Totals for a set of open invoices, summed in cents. */
-export function summarise(rows: OpenInvoice[]) {
-  const sum = (list: OpenInvoice[]) =>
-    list.reduce((total, r) => total + cents(r.balance), 0) / 100;
-  const byCustomer = new Map<
-    string,
-    { name: string; balance: number; overdue: number; count: number }
-  >();
-  for (const r of rows) {
-    const key = `${r.doc.businessId}:${r.doc.customerId}`;
-    const entry = byCustomer.get(key) ?? {
-      name: r.doc.snapshot.customer.name,
-      balance: 0,
-      overdue: 0,
-      count: 0,
-    };
-    entry.balance = (cents(entry.balance) + cents(r.balance)) / 100;
-    if (r.daysOverdue > 0)
-      entry.overdue = (cents(entry.overdue) + cents(r.balance)) / 100;
-    entry.count++;
-    byCustomer.set(key, entry);
-  }
-  return {
-    outstanding: sum(rows),
-    overdue: sum(rows.filter((r) => r.daysOverdue > 0)),
-    overdueCount: rows.filter((r) => r.daysOverdue > 0).length,
-    buckets: AGE_BUCKETS.map((b) => ({
-      ...b,
-      amount: sum(rows.filter((r) => r.bucket === b.id)),
-      count: rows.filter((r) => r.bucket === b.id).length,
-    })),
-    customers: [...byCustomer.entries()]
-      .map(([key, value]) => ({ key, ...value }))
-      .sort((a, b) => b.balance - a.balance),
-  };
-}
-
 /** Throws unless this invoice may be emailed with this request. */
 export function checkSend(db: Database, request: SendRequest) {
   const doc = requireOpen(
@@ -411,7 +321,16 @@ export function settleReminders(db: Database, documentId: string): Database {
 
 export type ReminderInput = Pick<
   Reminder,
-  "id" | "documentId" | "sendOn" | "recipients" | "cc" | "subject" | "message"
+  | "id"
+  | "documentId"
+  | "sendOn"
+  | "recipients"
+  | "cc"
+  | "subject"
+  | "message"
+  | "repeatKind"
+  | "repeatEvery"
+  | "repeatUntil"
 >;
 
 /** Throws unless this reminder may be scheduled. */
@@ -432,6 +351,13 @@ export function checkReminder(db: Database, input: ReminderInput) {
     throw new Error("Choose the date to send the reminder.");
   if (input.sendOn < saToday())
     throw new Error("Choose today or a later date.");
+  if (input.repeatKind !== "none") {
+    const every = input.repeatEvery ?? NaN;
+    if (!Number.isInteger(every) || every < 1 || every > MAX_REPEAT_EVERY)
+      throw new Error(`Repeat every 1 to ${MAX_REPEAT_EVERY} days.`);
+    if (input.repeatUntil && input.repeatUntil < input.sendOn)
+      throw new Error("The repeat can’t end before the first reminder.");
+  }
   const errors = validateSendRequest({
     documentId: input.documentId,
     to: input.recipients,
@@ -451,6 +377,9 @@ export function scheduleReminder(db: Database, input: ReminderInput): Database {
       ...db.reminders,
       {
         ...input,
+        ...(input.repeatKind === "none"
+          ? { repeatEvery: undefined, repeatUntil: undefined }
+          : {}),
         subject: input.subject.trim(),
         businessId: doc.businessId,
         status: "scheduled",
@@ -598,5 +527,31 @@ export function autoReminderPlan(
     blocker,
     recipient: customer.email,
     steps,
+  };
+}
+
+/** The next reminder of a repeating series after `reminder` was sent. */
+export function nextInSeries(
+  reminder: Reminder,
+  today = saToday(),
+): Reminder | null {
+  if (reminder.repeatKind === "none" || !reminder.repeatEvery) return null;
+  const sendOn = nextReminderDate(
+    reminder.sendOn,
+    today,
+    reminder.repeatKind,
+    reminder.repeatEvery,
+    reminder.repeatUntil,
+  );
+  if (!sendOn) return null;
+  return {
+    ...reminder,
+    id: crypto.randomUUID(),
+    sendOn,
+    status: "scheduled",
+    error: "",
+    sentAt: undefined,
+    seriesId: reminder.seriesId ?? reminder.id,
+    createdAt: new Date().toISOString(),
   };
 }

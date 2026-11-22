@@ -121,7 +121,12 @@ export interface Store {
   sendReminderNow(
     db: Database,
     id: string,
-  ): Promise<{ reminder: Reminder; log: EmailLog | null }>;
+  ): Promise<{
+    reminder: Reminder;
+    log: EmailLog | null;
+    /** The next reminder of a repeating series, now scheduled. */
+    next: Reminder | null;
+  }>;
   /** Emails an issued invoice of a super business, with its PDF. */
   sendInvoice(db: Database, request: SendRequest): Promise<EmailLog>;
   saveCustomer(db: Database, customer: Customer): Promise<Customer>;

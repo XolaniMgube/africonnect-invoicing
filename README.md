@@ -76,7 +76,6 @@ The browser talks to Supabase directly with the publishable key, which is public
 
 - Anonymous visitors can read nothing. Signed-in users who aren’t in `public.employees` can read and change nothing.
 - **Email** (super businesses): only the `send-invoice` function (service role) writes the email log; employees read it for businesses they can see. Invoice PDFs can be saved only as `<business>/<issued invoice>.pdf` for invoices the employee can see, and are never replaced or deleted. The function reads the invoice as the signed-in employee, so the same visibility rules apply.
-- **Receivables** (sidebar, shown when you can see a super business): what super businesses are still owed, most overdue first, with totals, overdue by age (not yet due, 1–30, 31–60, 60+ days) and an owed-by-customer summary, filterable by business and customer. Calculated from payments and due dates; no migration needed.
 - **Payments** (super businesses): issued invoices take payments (amount, date, method, reference) but never more than the balance; payments can be deleted, not edited. Due dates and cancellation are stored beside the invoice, which itself never changes. A cancelled invoice has no payments; an invoice with payments can’t be revised; an invoice replaced by an issued revision is **Superseded** (any business) and takes no payments. Requires [`20261113140000_payments.sql`](supabase/migrations/20261113140000_payments.sql).
 - Employees are **Admin** or **Staff**. Only Admins change roles, mark **super businesses**, or give Staff access to one; there is always at least one Admin. A super business, with its customers, items and documents, is visible only to Admins and to Staff given access. Ordinary businesses are visible to every employee.
 - Only customers and items can be deleted through the API; businesses are archived and documents are kept. A customer used by any invoice or quotation (draft or issued) can’t be deleted (the documents’ foreign key refuses it). Document lines copy item details, so deleting an item never changes a document. Nothing in an archived business can be deleted until it is restored. Requires [`20261112150000_delete_customers_items.sql`](supabase/migrations/20261112150000_delete_customers_items.sql), which also removes item archiving (previously archived items become visible again).
@@ -108,6 +107,8 @@ Admins schedule reminders on issued invoices of super businesses (invoice page �
 1. **Apply** [`20261114130000_reminders.sql`](supabase/migrations/20261114130000_reminders.sql) (SQL Editor).
 2. **Deploy the function** (the daily job calls it without a login; it checks its own key instead): `npx supabase functions deploy send-reminders --use-api --no-verify-jwt`. Also redeploy `send-invoice`, which shares its code: `npx supabase functions deploy send-invoice --use-api`.
 3. **Start the daily job** (SQL Editor, once, with your project URL): `select public.schedule_daily_reminders('https://<project-ref>.supabase.co');`. Check it under **Integrations → Cron** in the dashboard.
+
+**Repeating reminders** (apply [`20261120120000_recurring_reminders.sql`](supabase/migrations/20261120120000_recurring_reminders.sql), then redeploy `send-reminders`): when scheduling, choose **Repeat** every N days or every N working days (weekends and South African public holidays, including Good Friday and Family Day, are skipped; a holiday on a Sunday moves to Monday), optionally **Until** a date. After each is sent (or fails), the next is scheduled; the repeat stops when the invoice is paid, cancelled or replaced, after the end date, or when an Admin cancels the next one.
 
 **Automatic reminders** (apply [`20261114140000_reminder_rules.sql`](supabase/migrations/20261114140000_reminder_rules.sql), then redeploy `send-reminders`): in Business settings → **Automatic reminders**, an Admin switches them on and picks the days relative to the due date (default: on the due date, 7 and 14 days after). The 12:00 run then reminds every unpaid issued invoice of that business on those days, to the customer’s email, with the default reminder wording — once per day chosen and invoice. A day missed (e.g. the project was paused) is still sent up to 3 days late. Admins can pause them for one invoice; invoices whose customer has no email address are flagged.
 
@@ -210,7 +211,7 @@ npm run build
 
 Unit tests (`npm test`) cover arithmetic, discounts, validation, storage, mapping, numbering on issue, immutable originals, linked revisions, conversion and business scoping.
 
-A hundred and twenty-six database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
+A hundred and thirty database tests (`npm run db:test`, needs the local stack) check every rule in [What the database enforces](#what-the-database-enforces), acting as an anonymous visitor, a signed-in non-employee and an employee.
 
 Run browser tests against an existing local server:
 

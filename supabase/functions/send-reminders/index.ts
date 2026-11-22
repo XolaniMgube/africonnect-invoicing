@@ -26,6 +26,7 @@ import {
   json,
   saToday,
 } from "../_shared/deno/runtime.ts";
+import { nextReminderDate, type RepeatKind } from "../_shared/working-days.ts";
 import {
   defaultReminderMessage,
   defaultReminderSubject,
@@ -62,6 +63,44 @@ async function finish(
         : {}),
     })
     .eq("id", id)
+    .select()
+    .single();
+  return data as Row | null;
+}
+
+/**
+ * Schedules the next reminder of a repeating series (after one was sent or
+ * failed). Stops after the end date; a paid, cancelled or replaced invoice
+ * never gets here (its reminder is cancelled instead).
+ */
+async function scheduleNext(admin: SupabaseClient, reminder: Row) {
+  const kind = (reminder.repeat_kind ?? "none") as RepeatKind;
+  if (kind === "none" || !reminder.repeat_every) return null;
+  const next = nextReminderDate(
+    reminder.send_on,
+    saToday(),
+    kind,
+    reminder.repeat_every,
+    reminder.repeat_until,
+  );
+  if (!next) return null;
+  const { data } = await admin
+    .from("reminders")
+    .insert({
+      document_id: reminder.document_id,
+      business_id: reminder.business_id,
+      send_on: next,
+      recipients: reminder.recipients,
+      cc: reminder.cc ?? [],
+      subject: reminder.subject,
+      message: reminder.message,
+      status: "scheduled",
+      repeat_kind: kind,
+      repeat_every: reminder.repeat_every,
+      repeat_until: reminder.repeat_until,
+      series_id: reminder.series_id ?? reminder.id,
+      created_by: reminder.created_by ?? null,
+    })
     .select()
     .single();
   return data as Row | null;
@@ -115,11 +154,14 @@ async function process(
     kind: "reminder",
     sentBy: sentBy ?? reminder.created_by ?? null,
   });
-  return finish(admin, reminder.id, {
+  const done = await finish(admin, reminder.id, {
     status: error ? "failed" : "sent",
     error,
     email_log_id: log?.id ?? null,
   });
+  // A failed one still continues the series, so it recovers once fixed.
+  await scheduleNext(admin, reminder);
+  return done;
 }
 
 /**
@@ -329,7 +371,18 @@ Deno.serve(async (req) => {
         .single();
       log = data;
     }
-    return json({ reminder, log });
+    // The next reminder of a repeating series, if one was scheduled.
+    let next = null;
+    if (reminder) {
+      const { data } = await admin
+        .from("reminders")
+        .select("*")
+        .eq("series_id", reminder.series_id ?? reminder.id)
+        .eq("status", "scheduled")
+        .maybeSingle();
+      next = data;
+    }
+    return json({ reminder, log, next });
   }
   return json(summary);
 });

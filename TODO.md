@@ -24,10 +24,7 @@ One feature at a time: build → you test → next. Ordered by what depends on w
 - [x] **Cancel invoice** / restore (no payments allowed on a cancelled invoice).
 - [x] Issuing a revision marks the original **Superseded** (all businesses).
 
-## 4. Receivables overview — S/M (super businesses) ✅ done
-
-- [x] Total outstanding, overdue list, overdue by age (not yet due / 1–30 / 31–60 / 60+ days).
-- [x] Owed-by-customer summary; business and customer filters.
+## 4. Receivables overview — removed 2026-11-22 (not needed)
 
 ## 5. Email setup and “Send invoice” — L (super businesses) ✅ done
 
@@ -51,6 +48,12 @@ One feature at a time: build → you test → next. Ordered by what depends on w
 - [x] The 12:00 run reminds every unpaid issued invoice on those days, once per day chosen; a missed day is caught up within 3 days.
 - [x] Per-invoice **Pause/Resume**; invoices show their plan; customers without email are flagged.
 - [x] Migration applied and `send-reminders` redeployed (2026-11-14).
+
+## 8. Repeating reminders — S/M (super businesses, Admins) ✅ built, awaiting deploy and test
+
+- [x] Repeat a scheduled reminder every N days or every N working days (SA weekends and public holidays skipped), optionally until a date.
+- [x] Each send schedules the next; stops when paid/cancelled/replaced, after the end date, or when the next one is cancelled.
+- [ ] **You:** apply `20261120120000_recurring_reminders.sql`; redeploy `send-reminders` (DEPLOY.md).
 
 ## Later (optional)
 
