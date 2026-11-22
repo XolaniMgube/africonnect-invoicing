@@ -3866,122 +3866,6 @@ th {
   }
 }
 
-/* Receivables */
-.receivables-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-.receivables-filters select {
-  width: auto;
-  min-width: 220px;
-}
-.receivables-stats {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-bottom: 18px;
-}
-.receivables-aging {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  padding: 16px;
-  margin-bottom: 20px;
-}
-.receivables-aging > div {
-  display: grid;
-  gap: 3px;
-  padding: 12px;
-  border-radius: 8px;
-  background: #f7f9f4;
-  border-top: 3px solid #c9d3c2;
-}
-.receivables-aging .aging-1-30 {
-  border-top-color: #e2b45b;
-}
-.receivables-aging .aging-31-60 {
-  border-top-color: #e08a4a;
-}
-.receivables-aging .aging-60\+ {
-  border-top-color: #c9443a;
-}
-.receivables-aging span,
-.receivables-aging small {
-  font-size: 11px;
-  color: #6d7966;
-}
-.receivables-aging strong {
-  font-size: 17px;
-  font-variant-numeric: tabular-nums;
-}
-.receivables-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 20px;
-  align-items: start;
-}
-.receivables-list,
-.receivables-customers {
-  padding: 20px;
-  min-width: 0;
-}
-.receivables-list h2,
-.receivables-customers h2 {
-  font-size: 17px;
-  margin-bottom: 12px;
-}
-.receivables-list .cell-primary small,
-.receivables-days {
-  display: block;
-  font-size: 11px;
-}
-.receivables-customers ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.receivables-customers li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid #edf0e8;
-}
-.receivables-customers li span {
-  display: grid;
-  min-width: 0;
-}
-.receivables-customers li small {
-  font-size: 11px;
-  color: #6d7966;
-}
-.receivables-customers li > strong {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-@media (max-width: 1100px) {
-  .receivables-layout {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 760px) {
-  .receivables-aging,
-  .receivables-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .receivables-filters select {
-    width: 100%;
-    min-width: 0;
-  }
-}
-@media (max-width: 480px) {
-  .receivables-aging,
-  .receivables-stats {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* Email */
 .email-card {
   padding: 20px;
@@ -4162,4 +4046,8 @@ th {
 }
 .auto-steps small {
   font-size: 11px;
+}
+.email-history .reminder-repeat {
+  color: #3f5672;
+  font-weight: 600;
 }

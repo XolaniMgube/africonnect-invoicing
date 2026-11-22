@@ -66,6 +66,13 @@ export type Reminder = {
   error: string;
   /** Set for automatic reminders: the rule (days after the due date). */
   ruleOffset?: number;
+  /** Repeats after it's sent: every N days or N working days (SA). */
+  repeatKind: "none" | "days" | "working_days";
+  repeatEvery?: number;
+  /** YYYY-MM-DD: no repeat after this date. */
+  repeatUntil?: string;
+  /** The first reminder of a repeating series (later ones share it). */
+  seriesId?: string;
   sentAt?: string;
   createdAt: string;
 };

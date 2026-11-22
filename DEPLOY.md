@@ -60,11 +60,12 @@ Commit and push. Vercel builds and deploys. Its environment variables don’t ch
 
 ## Migration log (production)
 
-| Migration                                                          | Applied                               |
-| ------------------------------------------------------------------ | ------------------------------------- |
-| `20261105120000_invoicing_schema.sql` … `20261113150000_email.sql` | ✅ before 2026-11-14                  |
-| `20261114120000_mail_settings.sql`                                 | ✅ 2026-11-14                         |
-| `20261114130000_reminders.sql`                                     | ✅ 2026-11-14 (+ daily job scheduled) |
-| `20261114140000_reminder_rules.sql`                                | ✅ 2026-11-14                         |
+| Migration                                                          | Applied                                     |
+| ------------------------------------------------------------------ | ------------------------------------------- |
+| `20261105120000_invoicing_schema.sql` … `20261113150000_email.sql` | ✅ before 2026-11-14                        |
+| `20261114120000_mail_settings.sql`                                 | ✅ 2026-11-14                               |
+| `20261114130000_reminders.sql`                                     | ✅ 2026-11-14 (+ daily job scheduled)       |
+| `20261114140000_reminder_rules.sql`                                | ✅ 2026-11-14                               |
+| `20261120120000_recurring_reminders.sql`                           | ⏳ pending — then redeploy `send-reminders` |
 
 Functions last deployed: `send-invoice` and `send-reminders` on 2026-11-14.

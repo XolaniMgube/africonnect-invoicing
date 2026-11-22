@@ -54,7 +54,8 @@ function ClassicPreview({ doc }: { doc: BusinessDocument }) {
           )}
           <h2>{issuer.name}</h2>
           <p className="preserve-lines">{issuer.address}</p>
-          <p>{[issuer.email, issuer.phone].filter(Boolean).join("  |  ")}</p>
+          {issuer.email && <p>{issuer.email}</p>}
+          {issuer.phone && <p>{issuer.phone}</p>}
           {issuer.registration && <p>Registration: {issuer.registration}</p>}
           {issuer.vat && <p>VAT number: {issuer.vat}</p>}
         </div>
@@ -183,7 +184,12 @@ function ClassicPreview({ doc }: { doc: BusinessDocument }) {
             {issuer.accountNumber && (
               <>
                 Account number: {issuer.accountNumber}
-                {issuer.branch && ` · Branch code: ${issuer.branch}`}
+                <br />
+              </>
+            )}
+            {issuer.branch && (
+              <>
+                Branch code: {issuer.branch}
                 <br />
               </>
             )}

@@ -1123,73 +1123,6 @@ test("super businesses record payments, due dates and cancellations; revisions s
   ).toHaveText("Superseded");
   await expect(page.getByRole("region", { name: "Payments" })).toHaveCount(0);
 });
-test("receivables list what super businesses are owed", async ({ page }) => {
-  await login(page);
-  // No super business yet: no Receivables link.
-  await expect(
-    page.getByRole("link", { name: "Receivables", exact: true }),
-  ).toHaveCount(0);
-  await page.goto("/admin");
-  await page.getByLabel("Super business: Glen Zamba Construction").check();
-  await expect(page.getByText("is now a super business.")).toBeVisible();
-
-  // One invoice part-paid and overdue, the other not yet due.
-  await page.goto("/documents/glen-doc-0");
-  const panel = page.getByRole("region", { name: "Payments" });
-  const issuedOn = await page.evaluate(
-    () =>
-      JSON.parse(
-        localStorage.getItem("africonnect-invoicing:v1")!,
-      ).documents.find((d: { id: string }) => d.id === "glen-doc-0").date,
-  );
-  await panel.getByLabel("Due date").fill(issuedOn);
-  await panel.getByRole("button", { name: "Save due date" }).click();
-  await expect(page.getByText("Due date updated.")).toBeVisible();
-  await panel.getByRole("button", { name: "Record payment" }).click();
-  await panel.getByLabel("Amount (R)").fill("1020");
-  await panel.getByRole("button", { name: "Save payment" }).click();
-  await expect(page.getByText("Payment recorded.")).toBeVisible();
-  await page.goto("/documents/glen-doc-2");
-  await panel.getByLabel("Due date").fill("2099-12-31");
-  await panel.getByRole("button", { name: "Save due date" }).click();
-  await expect(page.getByText("Due date updated.")).toBeVisible();
-
-  await page
-    .getByRole("link", { name: "Receivables", exact: true })
-    .first()
-    .click();
-  await expect(page).toHaveURL(/\/receivables$/);
-  const list = page.locator(".receivables-list tbody");
-  await expect(list.locator("tr")).toHaveCount(2);
-  // Most overdue first, with its remaining balance (17 020 − 1 020).
-  await expect(list.locator("tr").first()).toContainText("GZ-INV-0001");
-  await expect(list.locator("tr").first()).toContainText("R 16 000,00");
-  await expect(list.locator("tr").first()).toContainText("overdue");
-  await expect(list.locator("tr").nth(1)).toContainText("Not yet due");
-  await expect(page.locator(".receivables-stats")).toContainText("R 16 000,00");
-  await expect(
-    page.getByRole("region", { name: "Overdue by age" }),
-  ).toContainText("Not yet due");
-  await expect(page.locator(".receivables-customers")).toContainText(
-    "Mahlangu Property Group",
-  );
-
-  await page.getByLabel("Filter by customer").selectOption({
-    label: "Mahlangu Property Group",
-  });
-  await expect(list.locator("tr")).toHaveCount(2);
-  await list.getByRole("link", { name: "Open GZ-INV-0001" }).click();
-  await expect(page).toHaveURL(/\/documents\/glen-doc-0$/);
-
-  await page.goto("/receivables");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(list).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
-});
 test("super businesses email issued invoices (recorded as demo in the browser-only app)", async ({
   page,
 }) => {
@@ -1461,5 +1394,71 @@ test("admins set automatic reminder rules; invoices show their plan and can paus
   await page.goto("/documents/glen-doc-0");
   await expect(plan).toContainText(
     "Not sending: Mahlangu Property Group has no email address.",
+  );
+});
+test("repeating reminders schedule their next one; cancelling stops the repeat", async ({
+  page,
+}) => {
+  page.on("dialog", (dialog) => void dialog.accept());
+  await login(page);
+  await page.goto("/admin");
+  await page.getByLabel("Super business: Glen Zamba Construction").check();
+  await expect(page.getByText("is now a super business.")).toBeVisible();
+  await page.goto("/businesses/glen/settings");
+  await page
+    .getByLabel("Send invoices from")
+    .fill("accounts@africonnectsolutions.co.za");
+  await page
+    .getByRole("button", { name: "Save business", exact: true })
+    .click();
+  await expect(page.getByText("Business profile saved.")).toBeVisible();
+
+  await page.goto("/documents/glen-doc-0");
+  const panel = page.getByRole("region", { name: "Reminders" });
+  await panel.getByRole("button", { name: "Schedule reminder" }).click();
+  const dialog = page.getByRole("dialog", { name: /Schedule a reminder/ });
+  await dialog.getByLabel("Send on").fill("2099-11-20"); // a Friday
+  await expect(dialog.getByLabel("Repeat")).toHaveValue("none");
+  await dialog.getByLabel("Repeat").selectOption("working_days");
+  await expect(dialog.getByLabel("Every (working days)")).toHaveValue("3");
+  const until = dialog.getByLabel("Until (optional)");
+  await until.fill("2099-11-01");
+  // The browser refuses an end date before the first reminder.
+  expect(
+    await until.evaluate((el) => (el as HTMLInputElement).validity.valid),
+  ).toBe(false);
+  await dialog.getByLabel("Until (optional)").fill("2099-12-31");
+  await dialog.getByRole("button", { name: "Schedule reminder" }).click();
+  await expect(
+    page.getByText(
+      /Reminder scheduled for 20 Nov 2099 at 12:00, repeats every 3 working days until 2099-12-31/,
+    ),
+  ).toBeVisible();
+  await expect(panel).toContainText(
+    "Repeats every 3 working days until 31 Dec 2099",
+  );
+
+  // Sending it schedules the next one: Friday + 3 working days → Wednesday.
+  await panel
+    .getByRole("button", { name: /Send reminder of 20 Nov 2099 now/ })
+    .click();
+  await expect(
+    page.getByText("Demo only: recorded, but nothing was emailed."),
+  ).toBeVisible();
+  await expect(panel).toContainText("25 Nov 2099");
+  await expect(panel.locator(".badge", { hasText: "Scheduled" })).toHaveCount(
+    1,
+  );
+  await expect(panel.locator(".badge", { hasText: "Sent" })).toHaveCount(1);
+  await page.reload();
+  await expect(panel).toContainText("25 Nov 2099");
+
+  // Cancelling the next one stops the repeat.
+  await panel
+    .getByRole("button", { name: /Cancel reminder of 25 Nov 2099/ })
+    .click();
+  await expect(page.getByText("Reminder cancelled.")).toBeVisible();
+  await expect(panel.locator(".badge", { hasText: "Scheduled" })).toHaveCount(
+    0,
   );
 });

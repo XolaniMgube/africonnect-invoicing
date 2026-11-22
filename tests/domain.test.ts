@@ -45,11 +45,9 @@ import {
   deletePayment,
   dueDateOf,
   invoiceStatus,
-  openInvoices,
   recordPayment,
   restoreInvoice,
   setDueDate,
-  summarise,
   checkSend,
   checkMailSettings,
   cancelReminder,
@@ -58,6 +56,7 @@ import {
   autoReminderPlan,
   setAutoRemindersPaused,
   setReminderRules,
+  nextInSeries,
 } from "../src/domain/receivables";
 import {
   defaultMessage,
@@ -543,63 +542,6 @@ test("payments, due dates, cancelling and superseded invoices", () => {
   delete legacy.tracking;
   assert.deepEqual(parseDatabase(JSON.stringify(legacy)).payments, []);
 });
-test("receivables: open invoices, overdue ages and totals per customer", () => {
-  let db = setSuper(createFixtures(), "glen", true);
-  const issued = db.documents.filter(
-    (d) =>
-      d.businessId === "glen" && d.kind === "invoice" && d.status === "issued",
-  );
-  assert.equal(issued.length, 2);
-  const [a, b] = issued;
-  db = setDueDate(db, a.id, "2026-12-01");
-  db = setDueDate(db, b.id, "2026-12-01");
-  // Nothing from ordinary businesses, quotations or drafts.
-  assert.deepEqual(
-    openInvoices(db, "2026-11-20")
-      .map((r) => r.doc.id)
-      .sort(),
-    [a.id, b.id].sort(),
-  );
-  let rows = openInvoices(db, "2026-11-20");
-  assert.ok(rows.every((r) => r.bucket === "current" && r.daysOverdue === 0));
-
-  db = recordPayment(db, {
-    id: "p1",
-    documentId: a.id,
-    amount: 1000,
-    paidOn: "2026-11-10",
-    method: "eft",
-    reference: "",
-  });
-  rows = openInvoices(db, "2027-01-15"); // 45 days after the due date
-  assert.ok(rows.every((r) => r.bucket === "31-60" && r.daysOverdue === 45));
-  const totals = summarise(rows);
-  const expected =
-    (Math.round(a.totals.total * 100) -
-      100000 +
-      Math.round(b.totals.total * 100)) /
-    100;
-  assert.equal(totals.outstanding, expected);
-  assert.equal(totals.overdue, expected);
-  assert.equal(totals.overdueCount, 2);
-  assert.equal(totals.buckets.find((x) => x.id === "31-60")!.amount, expected);
-  assert.equal(
-    totals.customers.reduce((sum, c) => sum + c.count, 0),
-    2,
-  );
-  assert.equal(summarise(openInvoices(db, "2027-03-15")).buckets[3].count, 2);
-  // Paid and cancelled invoices drop out.
-  db = recordPayment(db, {
-    id: "p2",
-    documentId: a.id,
-    amount: amounts(db, a).balance,
-    paidOn: "2026-11-11",
-    method: "eft",
-    reference: "",
-  });
-  db = cancelInvoice(db, b.id, "");
-  assert.deepEqual(openInvoices(db, "2027-01-15"), []);
-});
 test("invoice emails: recipients, wording, escaping and send checks", () => {
   assert.deepEqual(parseRecipients(" a@x.co.za, b@y.com;A@x.co.za  c@z.org "), [
     "a@x.co.za",
@@ -730,6 +672,7 @@ test("reminders: scheduling rules and automatic cancellation", () => {
     id,
     documentId: inv.id,
     sendOn,
+    repeatKind: "none" as const,
     recipients: ["client@customer.example"],
     cc: [],
     subject: "Reminder",
@@ -865,6 +808,7 @@ test("automatic reminders: rules, pause and the plan shown on an invoice", () =>
         id: "a7",
         documentId: inv.id,
         businessId: "glen",
+        repeatKind: "none",
         sendOn: "2026-12-08",
         recipients: [],
         cc: [],
@@ -890,6 +834,72 @@ test("automatic reminders: rules, pause and the plan shown on an invoice", () =>
   };
   assert.match(autoReminderPlan(db, inv)!.blocker, /has no email address/);
   assert.doesNotThrow(() => parseDatabase(JSON.stringify(db)));
+});
+test("repeating reminders: checks and the next one in the series", () => {
+  let db = setSuper(createFixtures(), "glen", true);
+  db = upsertBusiness(db, {
+    ...db.businesses.find((b) => b.id === "glen")!,
+    emailFrom: "accounts@africonnectsolutions.co.za",
+  });
+  const inv = db.documents.find(
+    (d) =>
+      d.businessId === "glen" && d.kind === "invoice" && d.status === "issued",
+  )!;
+  const base = {
+    id: "s1",
+    documentId: inv.id,
+    sendOn: "2099-11-20",
+    recipients: ["client@customer.example"],
+    cc: [],
+    subject: "Reminder",
+    message: "",
+  };
+  assert.throws(
+    () => scheduleReminder(db, { ...base, repeatKind: "days", repeatEvery: 0 }),
+    /Repeat every 1 to 30 days/,
+  );
+  assert.throws(
+    () =>
+      scheduleReminder(db, {
+        ...base,
+        repeatKind: "days",
+        repeatEvery: 7,
+        repeatUntil: "2099-11-01",
+      }),
+    /can’t end before/,
+  );
+  db = scheduleReminder(db, {
+    ...base,
+    repeatKind: "working_days",
+    repeatEvery: 3,
+    repeatUntil: "2099-12-31",
+  });
+  const first = db.reminders[0];
+  assert.equal(first.repeatKind, "working_days");
+  assert.doesNotThrow(() => parseDatabase(JSON.stringify(db)));
+  // 20 Nov 2099 is a Friday: 3 working days later is Wednesday 25 Nov.
+  const next = nextInSeries({ ...first, status: "sent" }, "2099-11-20")!;
+  assert.deepEqual(
+    [next.sendOn, next.status, next.seriesId, next.repeatEvery],
+    ["2099-11-25", "scheduled", "s1", 3],
+  );
+  assert.notEqual(next.id, "s1");
+  // Later ones keep the same series and stop after the end date.
+  assert.equal(nextInSeries(next, "2099-11-25")!.seriesId, "s1");
+  assert.equal(
+    nextInSeries({ ...next, sendOn: "2099-12-30" }, "2099-12-30"),
+    null,
+  );
+  // One-off reminders don't repeat.
+  db = scheduleReminder(db, {
+    ...base,
+    id: "o1",
+    repeatKind: "none",
+    repeatEvery: 5,
+  });
+  const oneOff = db.reminders.find((r) => r.id === "o1")!;
+  assert.equal(oneOff.repeatEvery, undefined);
+  assert.equal(nextInSeries(oneOff), null);
 });
 test("invalid dates, prices, quantities, tax and missing issuer details are rejected", () => {
   const db = createFixtures();

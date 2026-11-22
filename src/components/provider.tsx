@@ -91,7 +91,11 @@ type Actions = {
   sendReminderNow(
     id: string,
     message: string,
-  ): Promise<{ reminder: Reminder; log: EmailLog | null } | null>;
+  ): Promise<{
+    reminder: Reminder;
+    log: EmailLog | null;
+    next: Reminder | null;
+  } | null>;
   saveMailSettings(
     settings: Omit<MailSettings, "updatedAt"> & { password: string },
     message: string,
@@ -383,10 +387,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       sendReminderNow: (id, message) =>
         run(
           (db) => store.sendReminderNow(db, id),
-          (db, { reminder, log }) => ({
-            ...withReminder(db, reminder),
-            emails: log ? [log, ...db.emails] : db.emails,
-          }),
+          (db, { reminder, log, next }) => {
+            const updated = withReminder(db, reminder);
+            return {
+              ...updated,
+              reminders: next
+                ? [...updated.reminders, next]
+                : updated.reminders,
+              emails: log ? [log, ...db.emails] : db.emails,
+            };
+          },
           message,
         ),
       sendInvoice: (request, message) =>

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-22
+
+- Classic template (preview and PDF): the business phone number is on its own line below the email address, and the branch code on its own line below the account number. Section spacing in the PDF was tightened slightly so short invoices still fit on one page, and a notes heading is never left alone at the bottom of a page.
+- Removed the **Receivables** page (sidebar link, page and its calculations). Payments, due dates and reminders on invoices are unchanged.
+
+## 2026-11-20
+
+- Added repeating reminders: when scheduling a reminder, **Repeat** every N days or every N working days (weekends and South African public holidays skipped), optionally until a date. Each send schedules the next; the repeat stops when the invoice is paid, cancelled or replaced, after the end date, or when the next one is cancelled. Apply `20261120120000_recurring_reminders.sql` and redeploy `send-reminders`.
+
 ## 2026-11-14
 
 - Added automatic reminders (super businesses, Admins): Business settings → **Automatic reminders** (on/off, days relative to the due date; default due date, +7, +14). The daily 12:00 run reminds every unpaid issued invoice on those days, once per day chosen, catching up a missed day within 3 days. Invoices show their automatic plan (Upcoming / Sent / Missed…) with **Pause/Resume**, and flag customers without an email address. Apply `20261114140000_reminder_rules.sql` and redeploy `send-reminders`.

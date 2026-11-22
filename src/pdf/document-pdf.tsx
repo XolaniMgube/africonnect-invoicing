@@ -83,7 +83,7 @@ const s = StyleSheet.create({
   heading: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 22,
+    marginBottom: 16,
   },
   // Natural proportions, up to 120 pt each way; tall logos sit left.
   logo: {
@@ -116,7 +116,7 @@ const s = StyleSheet.create({
   columns: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 22,
+    marginBottom: 16,
   },
   column: { width: "46%" },
   label: { fontSize: 7.5, letterSpacing: 1, color: MUTED, marginBottom: 5 },
@@ -147,7 +147,7 @@ const s = StyleSheet.create({
     width: "46%",
     alignSelf: "flex-end",
     marginTop: 14,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   totalRow: {
     flexDirection: "row",
@@ -166,9 +166,9 @@ const s = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
   },
   section: {
-    marginTop: 4,
-    paddingTop: 12,
-    paddingBottom: 6,
+    marginTop: 2,
+    paddingTop: 10,
+    paddingBottom: 4,
     borderTop: `1 solid ${RULE}`,
   },
   draft: {
@@ -296,9 +296,8 @@ function ClassicPage({ doc }: { doc: BusinessDocument }) {
           )}
           <Text style={{ ...s.name, color: accent }}>{issuer.name}</Text>
           <Text>{issuer.address}</Text>
-          <Text>
-            {[issuer.email, issuer.phone].filter(Boolean).join("  |  ")}
-          </Text>
+          {issuer.email && <Text>{issuer.email}</Text>}
+          {issuer.phone && <Text>{issuer.phone}</Text>}
           {issuer.registration && (
             <Text style={s.muted}>Registration: {issuer.registration}</Text>
           )}
@@ -410,17 +409,16 @@ function ClassicPage({ doc }: { doc: BusinessDocument }) {
             <Text>Account holder: {issuer.accountName}</Text>
           )}
           {issuer.accountNumber && (
-            <Text>
-              Account number: {issuer.accountNumber}
-              {issuer.branch ? `  ·  Branch code: ${issuer.branch}` : ""}
-            </Text>
+            <Text>Account number: {issuer.accountNumber}</Text>
           )}
+          {issuer.branch && <Text>Branch code: {issuer.branch}</Text>}
           <Text>Payment reference: {doc.number || "Draft"}</Text>
         </View>
       )}
       {doc.notes && (
         <View style={s.section}>
-          <Text style={s.label}>
+          {/* Keeps the heading with at least a line of the notes. */}
+          <Text style={s.label} minPresenceAhead={24}>
             {invoice ? "NOTES & INSTRUCTIONS" : "TERMS & NOTES"}
           </Text>
           <Text>{doc.notes}</Text>

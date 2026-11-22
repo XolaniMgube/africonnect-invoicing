@@ -3,7 +3,7 @@
 -- that is rolled back, so no test data is left behind.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(126);
+select plan(130);
 
 -- People: one employee, one signed-in user who is not an employee.
 insert into auth.users (id, email) values
@@ -608,6 +608,21 @@ insert into public.reminders (id, document_id, business_id, send_on, recipients,
 select is(
   (select rule_offset from public.reminders where id = '50000000-0000-4000-8000-000000000009'),
   null, 'reminders made in the app are never automatic ones');
+
+-- ─── Repeating reminders ───
+select lives_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject, repeat_kind, repeat_every, repeat_until, series_id)
+    values ('50000000-0000-4000-8000-000000000010', '30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', public.sa_today() + 1, '{a@b.co}', 'R', 'working_days', 3, public.sa_today() + 30, '50000000-0000-4000-8000-0000000000aa')$$,
+  'admins schedule a repeating reminder');
+select is(
+  (select repeat_kind || ' ' || repeat_every || ' ' || coalesce(series_id::text, 'no series')
+   from public.reminders where id = '50000000-0000-4000-8000-000000000010'),
+  'working_days 3 no series', 'the app cannot attach a reminder to another series');
+select throws_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject, repeat_kind, repeat_every)
+    values ('50000000-0000-4000-8000-000000000011', '30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', public.sa_today() + 1, '{a@b.co}', 'R', 'days', 0)$$,
+  '23514', null, 'repeats are every 1 to 30 days');
+select throws_ok($$insert into public.reminders (id, document_id, business_id, send_on, recipients, subject, repeat_kind, repeat_every, repeat_until)
+    values ('50000000-0000-4000-8000-000000000012', '30000000-0000-4000-8000-000000000023', '10000000-0000-4000-8000-000000000001', public.sa_today() + 1, '{a@b.co}', 'R', 'days', 7, public.sa_today())$$,
+  '23514', null, 'a repeat cannot end before it starts');
 reset role;
 
 -- ─── Logo storage ───

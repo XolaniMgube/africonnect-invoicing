@@ -22,6 +22,11 @@ import {
   parseRecipients,
   validateSendRequest,
 } from "../../supabase/functions/_shared/invoice-email";
+import {
+  MAX_REPEAT_EVERY,
+  describeRepeat,
+  type RepeatKind,
+} from "../../supabase/functions/_shared/working-days";
 
 /**
  * Payment reminders for an issued invoice of a super business. Everyone who
@@ -40,6 +45,9 @@ export function RemindersPanel({ doc }: { doc: BusinessDocument }) {
   } = useData();
   const [form, setForm] = useState<{
     sendOn: string;
+    repeat: RepeatKind;
+    every: string;
+    until: string;
     to: string;
     cc: string;
     subject: string;
@@ -66,6 +74,9 @@ export function RemindersPanel({ doc }: { doc: BusinessDocument }) {
     setForm({
       // On the due date if it's still ahead, otherwise today.
       sendOn: due > today ? due : today,
+      repeat: "none",
+      every: "7",
+      until: "",
       to: customer.email,
       cc: "",
       subject: defaultReminderSubject(doc.number, business.name),
@@ -88,6 +99,9 @@ export function RemindersPanel({ doc }: { doc: BusinessDocument }) {
       cc: parseRecipients(form.cc),
       subject: form.subject,
       message: form.message,
+      repeatKind: form.repeat,
+      repeatEvery: form.repeat === "none" ? undefined : Number(form.every),
+      repeatUntil: form.repeat === "none" ? undefined : form.until || undefined,
     };
     const problems = validateSendRequest({
       documentId: doc.id,
@@ -98,12 +112,19 @@ export function RemindersPanel({ doc }: { doc: BusinessDocument }) {
     });
     if (!form.sendOn || form.sendOn < today)
       problems.push("Choose today or a later date.");
+    if (form.repeat !== "none") {
+      const every = Number(form.every);
+      if (!Number.isInteger(every) || every < 1 || every > MAX_REPEAT_EVERY)
+        problems.push(`Repeat every 1 to ${MAX_REPEAT_EVERY} days.`);
+      if (form.until && form.until < form.sendOn)
+        problems.push("The repeat can’t end before the first reminder.");
+    }
     setErrors(problems);
     if (problems.length) return;
     setBusy("schedule");
     const saved = await scheduleReminder(
       input,
-      `Reminder scheduled for ${dateLabel(input.sendOn)} at 12:00.`,
+      `Reminder scheduled for ${dateLabel(input.sendOn)} at 12:00${input.repeatKind === "none" ? "" : `, ${describeRepeat(input.repeatKind, input.repeatEvery, input.repeatUntil).toLowerCase()}`}.`,
     );
     setBusy("");
     if (saved) setForm(null);
@@ -222,6 +243,15 @@ export function RemindersPanel({ doc }: { doc: BusinessDocument }) {
                   to {r.recipients.join(", ")}
                   {r.cc.length > 0 && ` · cc ${r.cc.join(", ")}`}
                 </small>
+                {r.repeatKind !== "none" && r.status === "scheduled" && (
+                  <small className="reminder-repeat">
+                    {describeRepeat(
+                      r.repeatKind,
+                      r.repeatEvery,
+                      r.repeatUntil ? dateLabel(r.repeatUntil) : undefined,
+                    )}
+                  </small>
+                )}
                 {r.error && (
                   <small className={r.status === "failed" ? "email-error" : ""}>
                     {r.error}
@@ -245,7 +275,13 @@ export function RemindersPanel({ doc }: { doc: BusinessDocument }) {
                     aria-label={`Cancel reminder of ${dateLabel(r.sendOn)}`}
                     title="Cancel"
                     onClick={() => {
-                      if (confirm("Cancel this reminder?"))
+                      if (
+                        confirm(
+                          r.repeatKind === "none"
+                            ? "Cancel this reminder?"
+                            : "Cancel this reminder? This also stops the repeat.",
+                        )
+                      )
                         void cancelReminder(r.id, "Reminder cancelled.");
                     }}
                   >
@@ -288,6 +324,66 @@ export function RemindersPanel({ doc }: { doc: BusinessDocument }) {
                   onChange={(e) => setForm({ ...form, sendOn: e.target.value })}
                 />
               </Field>
+              <Field
+                label="Repeat"
+                hint="Working days skip weekends and South African public holidays."
+              >
+                <select
+                  value={form.repeat}
+                  onChange={(e) => {
+                    const repeat = e.target.value as RepeatKind;
+                    setForm({
+                      ...form,
+                      repeat,
+                      every:
+                        repeat === "working_days"
+                          ? "3"
+                          : repeat === "days"
+                            ? "7"
+                            : form.every,
+                    });
+                  }}
+                >
+                  <option value="none">Don’t repeat</option>
+                  <option value="days">Every few days</option>
+                  <option value="working_days">Every few working days</option>
+                </select>
+              </Field>
+              {form.repeat !== "none" && (
+                <>
+                  <Field
+                    label={
+                      form.repeat === "days"
+                        ? "Every (days)"
+                        : "Every (working days)"
+                    }
+                  >
+                    <input
+                      type="number"
+                      min="1"
+                      max={MAX_REPEAT_EVERY}
+                      step="1"
+                      value={form.every}
+                      onChange={(e) =>
+                        setForm({ ...form, every: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="Until (optional)"
+                    hint="Otherwise it repeats until the invoice is paid or cancelled."
+                  >
+                    <input
+                      type="date"
+                      min={form.sendOn || today}
+                      value={form.until}
+                      onChange={(e) =>
+                        setForm({ ...form, until: e.target.value })
+                      }
+                    />
+                  </Field>
+                </>
+              )}
               <Field label="To" hint="Separate several addresses with commas.">
                 <input
                   value={form.to}

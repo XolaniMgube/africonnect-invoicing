@@ -367,6 +367,10 @@ export type ReminderRow = {
   sent_at: string | null;
   created_at: string;
   rule_offset?: number | null;
+  repeat_kind?: string | null;
+  repeat_every?: number | null;
+  repeat_until?: string | null;
+  series_id?: string | null;
 };
 const REMINDER_STATUSES = [
   "scheduled",
@@ -390,8 +394,15 @@ export const rowToReminder = (r: ReminderRow): Reminder => {
       : "failed") as Reminder["status"],
     error: s(r.error),
     createdAt: s(r.created_at),
+    repeatKind:
+      r.repeat_kind === "days" || r.repeat_kind === "working_days"
+        ? r.repeat_kind
+        : "none",
   };
   if (r.sent_at) reminder.sentAt = r.sent_at;
+  if (r.repeat_every) reminder.repeatEvery = Number(r.repeat_every);
+  if (r.repeat_until) reminder.repeatUntil = r.repeat_until;
+  if (r.series_id) reminder.seriesId = r.series_id;
   if (r.rule_offset !== null && r.rule_offset !== undefined)
     reminder.ruleOffset = Number(r.rule_offset);
   return reminder;

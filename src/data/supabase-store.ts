@@ -615,6 +615,11 @@ export function createSupabaseStore(): Store {
               cc: input.cc,
               subject: input.subject.trim(),
               message: input.message,
+              repeat_kind: input.repeatKind,
+              repeat_every:
+                input.repeatKind === "none" ? null : input.repeatEvery,
+              repeat_until:
+                input.repeatKind === "none" ? null : input.repeatUntil || null,
             })
             .select()
             .single(),
@@ -645,12 +650,14 @@ export function createSupabaseStore(): Store {
       const { data, failure } = await callSendFunction<{
         reminder?: ReminderRow;
         log?: EmailRow | null;
+        next?: ReminderRow | null;
       }>({ reminderId: id }, "send-reminders");
       if (!data?.reminder)
         throw new Error(failure?.error || "The reminder could not be sent.");
       return {
         reminder: rowToReminder(data.reminder),
         log: data.log ? rowToEmail(data.log) : null,
+        next: data.next ? rowToReminder(data.next) : null,
       };
     },
 
